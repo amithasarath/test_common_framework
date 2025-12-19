@@ -6,12 +6,12 @@ This file is the single source of truth for the package version.
 - On feature branches: Uses sub-versions (e.g., 1.0.0-dev.1, 1.0.0-alpha.1)
 """
 
-__version__ = "0.3.2"
+__version__ = "0.3.3"
 
 # Version components for programmatic access
 VERSION_MAJOR = 0
 VERSION_MINOR = 3
-VERSION_PATCH = 2
+VERSION_PATCH = 3
 VERSION_SUFFIX = ""  # e.g., "dev.1", "alpha.1", "rc.1" for non-main branches
 
 
