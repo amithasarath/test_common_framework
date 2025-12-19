@@ -34,7 +34,7 @@ jobs:
           # others    → alpha.N
           if [[ "$BRANCH_NAME" == feature/* ]]; then
             VERSION_PREFIX="feature"
-          elif [[ "$BRANCH_NAME" == "dev" || "$BRANCH_NAME" == "develop" ]]; then
+          elif [[ "$BRANCH_NAME" == "dev" ]]; then
             VERSION_PREFIX="alpha"
           else
             VERSION_PREFIX="alpha"

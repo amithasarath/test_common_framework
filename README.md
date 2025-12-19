@@ -61,7 +61,7 @@ def unstable_function():
 | Branch | Version Format | Example |
 |--------|----------------|---------|
 | `main` | Rounded version | `1.0.0`, `1.1.0`, `2.0.0` |
-| `dev` / `develop` | Alpha version | `1.0.0-alpha.1`, `1.0.0-alpha.2` |
+| `dev` | Alpha version | `1.0.0-alpha.1`, `1.0.0-alpha.2` |
 | `feature/*` | Feature version | `1.0.0-feature.1`, `1.0.0-feature.2` |
 
 ### Automatic Version Bumping
@@ -125,7 +125,7 @@ Each workflow defines when it runs in the `on:` section:
 # ci.yml
 on:
   push:
-    branches: [main, develop]
+    branches: [main, dev]
   pull_request:
     branches: [main]
 
@@ -147,7 +147,7 @@ Since `main` branch is protected (PR only), the actual execution is:
 | Action | ci.yml | version-bump.yml | dev-version.yml |
 |--------|:------:|:----------------:|:---------------:|
 | Push to `feature/*` | - | - | ✅ |
-| Push to `develop` | ✅ | - | ✅ |
+| Push to `dev` | ✅ | - | ✅ |
 | Open PR to `main` | ✅ | - | - |
 | Merge PR to `main` | ✅ | ✅ | - |
 
@@ -162,7 +162,7 @@ Since `main` branch is protected (PR only), the actual execution is:
 │     └──► dev-version.yml                                        │
 │         └── Creates version: 0.3.4-feature.1                    │
 │                                                                 │
-│  2. PUSH TO develop                                             │
+│  2. PUSH TO dev                                                 │
 │     ├──► ci.yml (validates build)                               │
 │     └──► dev-version.yml                                        │
 │         └── Creates version: 0.3.4-alpha.1                      │
@@ -183,7 +183,7 @@ Since `main` branch is protected (PR only), the actual execution is:
 #### Typical Development Flow
 
 ```
-feature/new-util ──► develop ──► PR to main ──► main
+feature/new-util ──► dev ──► PR to main ──► main
        │                │              │           │
        ▼                ▼              ▼           ▼
   0.3.4-feature.1  0.3.4-alpha.2  (validates)   v0.3.5
