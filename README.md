@@ -62,6 +62,7 @@ def unstable_function():
 |--------|----------------|---------|
 | `main` | Rounded version | `1.0.0`, `1.1.0`, `2.0.0` |
 | `dev` | Alpha version | `1.0.0-alpha.1`, `1.0.0-alpha.2` |
+| `stg` | Beta version | `1.0.0-beta.1`, `1.0.0-beta.2` |
 | `feature/*` | Feature version | `1.0.0-feature.1`, `1.0.0-feature.2` |
 
 ### Automatic Version Bumping
@@ -125,7 +126,7 @@ Each workflow defines when it runs in the `on:` section:
 # ci.yml
 on:
   push:
-    branches: [main, dev]
+    branches: [main, dev, stg]
   pull_request:
     branches: [main]
 
@@ -148,6 +149,7 @@ Since `main` branch is protected (PR only), the actual execution is:
 |--------|:------:|:----------------:|:---------------:|
 | Push to `feature/*` | - | - | ✅ |
 | Push to `dev` | ✅ | - | ✅ |
+| Push to `stg` | ✅ | - | ✅ |
 | Open PR to `main` | ✅ | - | - |
 | Merge PR to `main` | ✅ | ✅ | - |
 
@@ -167,10 +169,15 @@ Since `main` branch is protected (PR only), the actual execution is:
 │     └──► dev-version.yml                                        │
 │         └── Creates version: 0.3.4-alpha.1                      │
 │                                                                 │
-│  3. OPEN PR TO main                                             │
+│  3. PUSH TO stg                                                 │
+│     ├──► ci.yml (validates build)                               │
+│     └──► dev-version.yml                                        │
+│         └── Creates version: 0.3.4-beta.1                       │
+│                                                                 │
+│  4. OPEN PR TO main                                             │
 │     └──► ci.yml (validates code before review)                  │
 │                                                                 │
-│  4. MERGE PR TO main                                            │
+│  5. MERGE PR TO main                                            │
 │     ├──► ci.yml (validates build)                               │
 │     └──► version-bump.yml                                       │
 │         ├── Bumps version: 0.3.4 → 0.3.5                        │
@@ -183,10 +190,10 @@ Since `main` branch is protected (PR only), the actual execution is:
 #### Typical Development Flow
 
 ```
-feature/new-util ──► dev ──► PR to main ──► main
-       │                │              │           │
-       ▼                ▼              ▼           ▼
-  0.3.4-feature.1  0.3.4-alpha.2  (validates)   v0.3.5
+feature/new-util ──► dev ──► stg ──► PR to main ──► main
+       │              │       │            │           │
+       ▼              ▼       ▼            ▼           ▼
+  0.3.4-feature.1  alpha.2  beta.1    (validates)   v0.3.5
 ```
 
 ## Using in AWS Lambda Projects
