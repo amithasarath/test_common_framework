@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Poetry
+.venv/
+poetry.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Lambda build artifacts
+layer/
+layer.zip
+function.zip
+
+# Testing
+.pytest_cache/
+.coverage
+
+# Environment
+.env
+.env.local

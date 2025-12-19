@@ -1,0 +1,91 @@
+name: Deploy Lambda Function
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'lambda_function.py'   # Trigger when Lambda code changes
+      - 'src/**'
+  workflow_dispatch:           # Allow manual trigger
+
+env:
+  PYTHON_VERSION: "3.11"
+  AWS_REGION: "us-east-1"
+  FUNCTION_NAME: "my-lambda-function"
+  LAYER_NAME: "my-lambda-dependencies"
+
+jobs:
+  deploy-lambda:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # ============================================
+      # Get the latest layer version from AWS
+      # ============================================
+      - name: Get latest layer version
+        id: get-layer
+        run: |
+          LAYER_ARN=$(aws lambda list-layer-versions \
+            --layer-name ${{ env.LAYER_NAME }} \
+            --query 'LayerVersions[0].LayerVersionArn' \
+            --output text)
+
+          if [ "$LAYER_ARN" == "None" ] || [ -z "$LAYER_ARN" ]; then
+            echo "ERROR: No layer found. Please run build-layer workflow first."
+            exit 1
+          fi
+
+          echo "layer_arn=$LAYER_ARN" >> $GITHUB_OUTPUT
+          echo "Using layer: $LAYER_ARN"
+
+      # ============================================
+      # Package only YOUR code (dependencies in layer)
+      # ============================================
+      - name: Package Lambda function
+        run: |
+          zip -r function.zip lambda_function.py src/
+          echo "=== Function zip size ==="
+          ls -lh function.zip
+
+      # ============================================
+      # Deploy Lambda function code
+      # ============================================
+      - name: Deploy Lambda function code
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ env.FUNCTION_NAME }} \
+            --zip-file fileb://function.zip
+
+          aws lambda wait function-updated \
+            --function-name ${{ env.FUNCTION_NAME }}
+
+      # ============================================
+      # Attach the layer to Lambda
+      # ============================================
+      - name: Attach Layer to Lambda
+        run: |
+          LAYER_ARN="${{ steps.get-layer.outputs.layer_arn }}"
+          echo "Attaching layer: $LAYER_ARN"
+
+          aws lambda update-function-configuration \
+            --function-name ${{ env.FUNCTION_NAME }} \
+            --layers "$LAYER_ARN"
+
+      - name: Summary
+        run: |
+          echo "## Lambda Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Function | ${{ env.FUNCTION_NAME }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Layer | ${{ steps.get-layer.outputs.layer_arn }} |" >> $GITHUB_STEP_SUMMARY

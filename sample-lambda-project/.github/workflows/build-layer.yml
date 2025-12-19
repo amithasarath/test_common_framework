@@ -1,0 +1,109 @@
+name: Build and Publish Lambda Layer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'pyproject.toml'      # Trigger when dependencies change
+      - 'poetry.lock'
+  workflow_dispatch:          # Allow manual trigger
+
+env:
+  PYTHON_VERSION: "3.11"
+  AWS_REGION: "us-east-1"
+  LAYER_NAME: "my-lambda-dependencies"
+
+jobs:
+  build-layer:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: latest
+
+      # ============================================
+      # Configure Git to access test_common_framework from GitHub
+      # ============================================
+      - name: Configure Git for private GitHub repos
+        run: |
+          git config --global url."https://${{ secrets.GH_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      # ============================================
+      # Install ALL dependencies using Poetry
+      # ============================================
+      - name: Install dependencies with Poetry
+        run: |
+          poetry config virtualenvs.in-project true
+          poetry install --only main --no-interaction
+
+          echo "=== Installed packages ==="
+          poetry show
+
+          echo "=== test_common_framework version ==="
+          poetry show test-common-framework
+
+      # ============================================
+      # Build Lambda Layer structure
+      # ============================================
+      - name: Build Lambda Layer
+        run: |
+          mkdir -p layer/python/lib/python${{ env.PYTHON_VERSION }}/site-packages
+
+          cp -r .venv/lib/python${{ env.PYTHON_VERSION }}/site-packages/* \
+            layer/python/lib/python${{ env.PYTHON_VERSION }}/site-packages/
+
+          # Remove unnecessary files
+          find layer -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+          find layer -type f -name "*.pyc" -delete 2>/dev/null || true
+          find layer -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
+
+          echo "=== Layer contents ==="
+          ls -la layer/python/lib/python${{ env.PYTHON_VERSION }}/site-packages/
+
+      - name: Package Lambda Layer
+        run: |
+          cd layer && zip -r ../layer.zip python
+          echo "=== Layer zip size ==="
+          ls -lh ../layer.zip
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Publish Lambda Layer
+        id: publish-layer
+        run: |
+          FRAMEWORK_VERSION=$(poetry show test-common-framework 2>/dev/null | grep 'version' | awk '{print $3}' || echo "unknown")
+
+          LAYER_ARN=$(aws lambda publish-layer-version \
+            --layer-name ${{ env.LAYER_NAME }} \
+            --description "Dependencies with test_common_framework v${FRAMEWORK_VERSION}" \
+            --zip-file fileb://layer.zip \
+            --compatible-runtimes python${{ env.PYTHON_VERSION }} \
+            --query 'LayerVersionArn' \
+            --output text)
+
+          echo "layer_arn=$LAYER_ARN" >> $GITHUB_OUTPUT
+          echo "=== Published Layer ==="
+          echo "$LAYER_ARN"
+
+      - name: Summary
+        run: |
+          echo "## Lambda Layer Published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Layer ARN:** \`${{ steps.publish-layer.outputs.layer_arn }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Use this ARN to attach the layer to your Lambda function." >> $GITHUB_STEP_SUMMARY
