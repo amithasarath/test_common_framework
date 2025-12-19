@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "test-common-framework"
-version = "0.3.10"
+version = "0.3.11"
 description = "Common utility functions for reuse across projects"
 authors = ["Your Name <your.email@example.com>"]
 readme = "README.md"
