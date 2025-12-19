@@ -109,37 +109,84 @@ git commit -m "major: redesign API"
 
 ### GitHub Actions Workflows
 
-| File | Trigger | Purpose |
-|------|---------|---------|
-| **ci.yml** | Push to `main`/`develop`, PRs to `main` | Runs CI checks (installs dependencies) |
-| **version-bump.yml** | Push to `main` | Auto-bumps version, updates `version.py`, creates git tag |
-| **dev-version.yml** | Push to non-main branches | Creates pre-release versions (alpha/feature) |
+This repository uses 3 workflow files located in `.github/workflows/`:
+
+| File | Purpose |
+|------|---------|
+| **ci.yml** | Installs dependencies and validates the build |
+| **version-bump.yml** | Bumps version, updates `version.py`, creates git tag |
+| **dev-version.yml** | Creates pre-release versions (alpha/feature) |
+
+#### Workflow Triggers
+
+Each workflow defines when it runs in the `on:` section:
+
+```yaml
+# ci.yml
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+# version-bump.yml
+on:
+  push:
+    branches: [main]
+
+# dev-version.yml
+on:
+  push:
+    branches-ignore: [main]
+```
+
+#### When Each Workflow Runs
+
+Since `main` branch is protected (PR only), the actual execution is:
+
+| Action | ci.yml | version-bump.yml | dev-version.yml |
+|--------|:------:|:----------------:|:---------------:|
+| Push to `feature/*` | - | - | ✅ |
+| Push to `develop` | ✅ | - | ✅ |
+| Open PR to `main` | ✅ | - | - |
+| Merge PR to `main` | ✅ | ✅ | - |
+
+#### Workflow Execution Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                  test_common_framework WORKFLOWS                │
+│                  WORKFLOW EXECUTION (PR-based)                  │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  Push to main                    Push to dev/feature/*          │
-│  ─────────────                   ──────────────────────         │
-│       │                                   │                     │
-│       ▼                                   ▼                     │
-│  ┌─────────────┐                 ┌─────────────────┐            │
-│  │ ci.yml      │                 │ dev-version.yml │            │
-│  │ (install)   │                 │ (alpha/feature) │            │
-│  └─────────────┘                 └─────────────────┘            │
-│       │                                   │                     │
-│       ▼                                   ▼                     │
-│  ┌─────────────────┐             Version: 0.3.2-alpha.1         │
-│  │ version-bump.yml│             Version: 0.3.2-feature.1       │
-│  │ (bump + tag)    │                                            │
-│  └─────────────────┘                                            │
-│       │                                                         │
-│       ▼                                                         │
-│  Version: 0.3.3                                                 │
-│  Tag: v0.3.3                                                    │
+│  1. PUSH TO feature/xyz                                         │
+│     └──► dev-version.yml                                        │
+│         └── Creates version: 0.3.4-feature.1                    │
+│                                                                 │
+│  2. PUSH TO develop                                             │
+│     ├──► ci.yml (validates build)                               │
+│     └──► dev-version.yml                                        │
+│         └── Creates version: 0.3.4-alpha.1                      │
+│                                                                 │
+│  3. OPEN PR TO main                                             │
+│     └──► ci.yml (validates code before review)                  │
+│                                                                 │
+│  4. MERGE PR TO main                                            │
+│     ├──► ci.yml (validates build)                               │
+│     └──► version-bump.yml                                       │
+│         ├── Bumps version: 0.3.4 → 0.3.5                        │
+│         ├── Updates version.py                                  │
+│         └── Creates tag: v0.3.5                                 │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
+```
+
+#### Typical Development Flow
+
+```
+feature/new-util ──► develop ──► PR to main ──► main
+       │                │              │           │
+       ▼                ▼              ▼           ▼
+  0.3.4-feature.1  0.3.4-alpha.2  (validates)   v0.3.5
 ```
 
 ## Using in AWS Lambda Projects
