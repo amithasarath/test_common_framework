@@ -107,19 +107,6 @@ git commit -m "major: redesign API"
 '0.1.6'
 ```
 
-## Development
-
-```bash
-# Run tests
-poetry run pytest
-
-# Format code
-poetry run black .
-
-# Lint
-poetry run flake8
-```
-
 ## Using in AWS Lambda Projects
 
 ### Step 1: Add Dependency to Your Lambda Project
