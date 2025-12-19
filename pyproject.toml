@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "test-common-framework"
+version = "0.1.0"
+description = "Common utility functions for reuse across projects"
+authors = ["Your Name <your.email@example.com>"]
+readme = "README.md"
+packages = [{include = "test_common_framework"}]
+repository = "https://github.com/your-username/test_common_framework"
+keywords = ["utilities", "common", "framework"]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+black = "^23.0.0"
+flake8 = "^6.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+target-version = ['py39']
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

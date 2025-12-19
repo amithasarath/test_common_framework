@@ -1,0 +1,127 @@
+name: Version Bump
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+
+      - name: Get current version
+        id: get_version
+        run: |
+          CURRENT_VERSION=$(grep -oP '__version__ = "\K[^"]+' test_common_framework/version.py)
+          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "Current version: $CURRENT_VERSION"
+
+      - name: Determine version bump type
+        id: bump_type
+        run: |
+          # Get the last commit message
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+
+          # Determine bump type based on commit message
+          if echo "$COMMIT_MSG" | grep -qiE "^(breaking|major)"; then
+            echo "bump=major" >> $GITHUB_OUTPUT
+          elif echo "$COMMIT_MSG" | grep -qiE "^(feat|feature|minor)"; then
+            echo "bump=minor" >> $GITHUB_OUTPUT
+          else
+            echo "bump=patch" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Calculate new version
+        id: new_version
+        run: |
+          CURRENT="${{ steps.get_version.outputs.current_version }}"
+          BUMP="${{ steps.bump_type.outputs.bump }}"
+
+          # Remove any suffix (dev, alpha, etc.) for main branch
+          CLEAN_VERSION=$(echo "$CURRENT" | sed 's/-.*$//')
+
+          IFS='.' read -ra PARTS <<< "$CLEAN_VERSION"
+          MAJOR=${PARTS[0]:-0}
+          MINOR=${PARTS[1]:-0}
+          PATCH=${PARTS[2]:-0}
+
+          if [ "$BUMP" = "major" ]; then
+            MAJOR=$((MAJOR + 1))
+            MINOR=0
+            PATCH=0
+          elif [ "$BUMP" = "minor" ]; then
+            MINOR=$((MINOR + 1))
+            PATCH=0
+          else
+            PATCH=$((PATCH + 1))
+          fi
+
+          NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "New version: $NEW_VERSION"
+
+      - name: Update version files
+        run: |
+          NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
+          IFS='.' read -ra PARTS <<< "$NEW_VERSION"
+
+          # Update version.py
+          cat > test_common_framework/version.py << EOF
+          """
+          Version information for test_common_framework.
+
+          This file is the single source of truth for the package version.
+          - On main branch: Uses rounded versions (e.g., 1.0.0, 1.1.0, 2.0.0)
+          - On feature branches: Uses sub-versions (e.g., 1.0.0-dev.1, 1.0.0-alpha.1)
+          """
+
+          __version__ = "$NEW_VERSION"
+
+          # Version components for programmatic access
+          VERSION_MAJOR = ${PARTS[0]}
+          VERSION_MINOR = ${PARTS[1]}
+          VERSION_PATCH = ${PARTS[2]}
+          VERSION_SUFFIX = ""  # e.g., "dev.1", "alpha.1", "rc.1" for non-main branches
+
+
+          def get_version() -> str:
+              """Return the full version string."""
+              return __version__
+
+
+          def get_version_tuple() -> tuple:
+              """Return version as a tuple (major, minor, patch, suffix)."""
+              return (VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, VERSION_SUFFIX)
+          EOF
+
+          # Update pyproject.toml
+          sed -i "s/^version = .*/version = \"$NEW_VERSION\"/" pyproject.toml
+
+      - name: Commit and push version bump
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add test_common_framework/version.py pyproject.toml
+          git commit -m "chore: bump version to ${{ steps.new_version.outputs.new_version }} [skip ci]" || exit 0
+          git push
+
+      - name: Create Git tag
+        run: |
+          git tag "v${{ steps.new_version.outputs.new_version }}"
+          git push origin "v${{ steps.new_version.outputs.new_version }}"

@@ -1,0 +1,79 @@
+name: Dev Version Update
+
+on:
+  push:
+    branches-ignore:
+      - main
+
+jobs:
+  update-dev-version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get base version and calculate dev version
+        id: version
+        run: |
+          # Get base version from main or current
+          BASE_VERSION=$(grep -oP '__version__ = "\K[^"]+' test_common_framework/version.py | sed 's/-.*$//')
+
+          # Count commits since branching from main
+          COMMIT_COUNT=$(git rev-list --count HEAD ^origin/main 2>/dev/null || echo "1")
+
+          # Get branch name and sanitize it
+          BRANCH_NAME="${GITHUB_REF_NAME}"
+          BRANCH_SUFFIX=$(echo "$BRANCH_NAME" | sed 's/[^a-zA-Z0-9]/-/g' | head -c 20)
+
+          # Create dev version
+          DEV_VERSION="${BASE_VERSION}-dev.${COMMIT_COUNT}+${BRANCH_SUFFIX}"
+
+          echo "dev_version=$DEV_VERSION" >> $GITHUB_OUTPUT
+          echo "base_version=$BASE_VERSION" >> $GITHUB_OUTPUT
+          echo "Dev version: $DEV_VERSION"
+
+      - name: Update version.py with dev version
+        run: |
+          DEV_VERSION="${{ steps.version.outputs.dev_version }}"
+          BASE_VERSION="${{ steps.version.outputs.base_version }}"
+          IFS='.' read -ra PARTS <<< "$BASE_VERSION"
+
+          cat > test_common_framework/version.py << EOF
+          """
+          Version information for test_common_framework.
+
+          This file is the single source of truth for the package version.
+          - On main branch: Uses rounded versions (e.g., 1.0.0, 1.1.0, 2.0.0)
+          - On feature branches: Uses sub-versions (e.g., 1.0.0-dev.1, 1.0.0-alpha.1)
+          """
+
+          __version__ = "$DEV_VERSION"
+
+          # Version components for programmatic access
+          VERSION_MAJOR = ${PARTS[0]}
+          VERSION_MINOR = ${PARTS[1]}
+          VERSION_PATCH = ${PARTS[2]}
+          VERSION_SUFFIX = "$(echo $DEV_VERSION | sed 's/^[0-9.]*-//')"
+
+
+          def get_version() -> str:
+              """Return the full version string."""
+              return __version__
+
+
+          def get_version_tuple() -> tuple:
+              """Return version as a tuple (major, minor, patch, suffix)."""
+              return (VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, VERSION_SUFFIX)
+          EOF
+
+      - name: Commit dev version (if changed)
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add test_common_framework/version.py
+          git diff --staged --quiet || git commit -m "chore: update dev version [skip ci]"
+          git push || echo "Nothing to push"
