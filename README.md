@@ -58,8 +58,11 @@ def unstable_function():
 
 ## Versioning
 
-- **Main branch**: Rounded versions (e.g., `1.0.0`, `1.1.0`, `2.0.0`)
-- **Feature branches**: Sub-versions (e.g., `1.0.0-dev.1`, `1.0.0-alpha.1`)
+| Branch | Version Format | Example |
+|--------|----------------|---------|
+| `main` | Rounded version | `1.0.0`, `1.1.0`, `2.0.0` |
+| `dev` / `develop` | Alpha version | `1.0.0-alpha.1`, `1.0.0-alpha.2` |
+| `feature/*` | Feature version | `1.0.0-feature.1`, `1.0.0-feature.2` |
 
 ### Automatic Version Bumping
 

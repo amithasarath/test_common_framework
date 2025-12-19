@@ -1,4 +1,4 @@
-name: Dev Version Update
+name: Pre-release Version Update
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - main
 
 jobs:
-  update-dev-version:
+  update-prerelease-version:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -16,7 +16,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get base version and calculate dev version
+      - name: Get base version and calculate pre-release version
         id: version
         run: |
           # Get base version from main or current
@@ -25,20 +25,32 @@ jobs:
           # Count commits since branching from main
           COMMIT_COUNT=$(git rev-list --count HEAD ^origin/main 2>/dev/null || echo "1")
 
-          # Get branch name and sanitize it
+          # Get branch name
           BRANCH_NAME="${GITHUB_REF_NAME}"
-          BRANCH_SUFFIX=$(echo "$BRANCH_NAME" | sed 's/[^a-zA-Z0-9]/-/g' | head -c 20)
 
-          # Create dev version
-          DEV_VERSION="${BASE_VERSION}-dev.${COMMIT_COUNT}+${BRANCH_SUFFIX}"
+          # Determine version prefix based on branch type
+          # feature/* → feature.N
+          # dev       → alpha.N
+          # others    → alpha.N
+          if [[ "$BRANCH_NAME" == feature/* ]]; then
+            VERSION_PREFIX="feature"
+          elif [[ "$BRANCH_NAME" == "dev" || "$BRANCH_NAME" == "develop" ]]; then
+            VERSION_PREFIX="alpha"
+          else
+            VERSION_PREFIX="alpha"
+          fi
 
-          echo "dev_version=$DEV_VERSION" >> $GITHUB_OUTPUT
+          # Create version: 0.1.5-alpha.3 or 0.1.5-feature.3
+          PRERELEASE_VERSION="${BASE_VERSION}-${VERSION_PREFIX}.${COMMIT_COUNT}"
+
+          echo "prerelease_version=$PRERELEASE_VERSION" >> $GITHUB_OUTPUT
           echo "base_version=$BASE_VERSION" >> $GITHUB_OUTPUT
-          echo "Dev version: $DEV_VERSION"
+          echo "version_prefix=$VERSION_PREFIX" >> $GITHUB_OUTPUT
+          echo "Pre-release version: $PRERELEASE_VERSION"
 
-      - name: Update version.py with dev version
+      - name: Update version.py with pre-release version
         run: |
-          DEV_VERSION="${{ steps.version.outputs.dev_version }}"
+          PRERELEASE_VERSION="${{ steps.version.outputs.prerelease_version }}"
           BASE_VERSION="${{ steps.version.outputs.base_version }}"
           IFS='.' read -ra PARTS <<< "$BASE_VERSION"
 
@@ -48,16 +60,17 @@ jobs:
 
           This file is the single source of truth for the package version.
           - On main branch: Uses rounded versions (e.g., 1.0.0, 1.1.0, 2.0.0)
-          - On feature branches: Uses sub-versions (e.g., 1.0.0-dev.1, 1.0.0-alpha.1)
+          - On dev branch: Uses alpha versions (e.g., 1.0.0-alpha.1)
+          - On feature branches: Uses feature versions (e.g., 1.0.0-feature.1)
           """
 
-          __version__ = "$DEV_VERSION"
+          __version__ = "$PRERELEASE_VERSION"
 
           # Version components for programmatic access
           VERSION_MAJOR = ${PARTS[0]}
           VERSION_MINOR = ${PARTS[1]}
           VERSION_PATCH = ${PARTS[2]}
-          VERSION_SUFFIX = "$(echo $DEV_VERSION | sed 's/^[0-9.]*-//')"
+          VERSION_SUFFIX = "$(echo $PRERELEASE_VERSION | sed 's/^[0-9.]*-//')"
 
 
           def get_version() -> str:
@@ -70,10 +83,10 @@ jobs:
               return (VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, VERSION_SUFFIX)
           EOF
 
-      - name: Commit dev version (if changed)
+      - name: Commit pre-release version (if changed)
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git add test_common_framework/version.py
-          git diff --staged --quiet || git commit -m "chore: update dev version [skip ci]"
+          git diff --staged --quiet || git commit -m "chore: update pre-release version [skip ci]"
           git push || echo "Nothing to push"
