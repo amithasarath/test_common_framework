@@ -456,3 +456,147 @@ aws lambda publish-layer-version \
   --zip-file fileb://layer.zip \
   --compatible-runtimes python3.11
 ```
+
+### Adding a New Layer (Future Packages)
+
+To add more PyPI packages as a **separate layer**, follow these 3 steps:
+
+#### Step 1: Add New Dependency Group in pyproject.toml
+
+```toml
+# Existing layers
+[tool.poetry.group.pypi]
+optional = true
+
+[tool.poetry.group.pypi.dependencies]
+requests = "^2.31.0"
+
+# NEW LAYER: Add your new group
+[tool.poetry.group.ml]
+optional = true
+
+[tool.poetry.group.ml.dependencies]
+numpy = "^1.26.0"
+pandas = "^2.1.0"
+scikit-learn = "^1.3.0"
+```
+
+#### Step 2: Create New Workflow for the Layer
+
+Create `.github/workflows/build-ml-layer.yml`:
+
+```yaml
+name: Build ML Layer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'pyproject.toml'
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.11"
+  AWS_REGION: "us-east-1"
+  LAYER_NAME: "ml-dependencies-layer"
+
+jobs:
+  build-ml-layer:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: snok/install-poetry@v1
+
+      - name: Install ML dependencies only
+        run: |
+          poetry config virtualenvs.in-project true
+          poetry install --only ml --no-interaction
+
+      - name: Build Lambda Layer
+        run: |
+          mkdir -p layer/python/lib/python${{ env.PYTHON_VERSION }}/site-packages
+          cp -r .venv/lib/python${{ env.PYTHON_VERSION }}/site-packages/* \
+            layer/python/lib/python${{ env.PYTHON_VERSION }}/site-packages/
+          find layer -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+          find layer -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
+          cd layer && zip -r ../ml-layer.zip python
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Publish Layer
+        run: |
+          aws lambda publish-layer-version \
+            --layer-name ${{ env.LAYER_NAME }} \
+            --description "ML packages: numpy, pandas, scikit-learn" \
+            --zip-file fileb://ml-layer.zip \
+            --compatible-runtimes python${{ env.PYTHON_VERSION }}
+```
+
+#### Step 3: Update deploy-lambda.yml to Attach New Layer
+
+```yaml
+env:
+  PYPI_LAYER_NAME: "pypi-dependencies-layer"
+  FRAMEWORK_LAYER_NAME: "framework-layer"
+  ML_LAYER_NAME: "ml-dependencies-layer"      # Add new layer
+
+# Add step to get new layer ARN
+- name: Get ML layer version
+  id: get-ml-layer
+  run: |
+    LAYER_ARN=$(aws lambda list-layer-versions \
+      --layer-name ${{ env.ML_LAYER_NAME }} \
+      --query 'LayerVersions[0].LayerVersionArn' \
+      --output text)
+    echo "ml_layer_arn=$LAYER_ARN" >> $GITHUB_OUTPUT
+
+# Update attach step to include all layers
+- name: Attach all layers to Lambda
+  run: |
+    aws lambda update-function-configuration \
+      --function-name ${{ env.FUNCTION_NAME }} \
+      --layers \
+        "${{ steps.get-pypi-layer.outputs.pypi_layer_arn }}" \
+        "${{ steps.get-framework-layer.outputs.framework_layer_arn }}" \
+        "${{ steps.get-ml-layer.outputs.ml_layer_arn }}"
+```
+
+#### Summary: Adding New Layer
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  To Add a New Layer:                                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. pyproject.toml                                              │
+│     └── Add [tool.poetry.group.NEW_NAME.dependencies]           │
+│                                                                 │
+│  2. .github/workflows/build-NEW_NAME-layer.yml                  │
+│     └── poetry install --only NEW_NAME                          │
+│                                                                 │
+│  3. .github/workflows/deploy-lambda.yml                         │
+│     └── Add new layer ARN to --layers                           │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### Key Poetry Commands
+
+```bash
+# Install only specific group
+poetry install --only ml
+
+# Install multiple groups
+poetry install --only pypi,framework,ml
+
+# Install all groups
+poetry install --with pypi,framework,ml
+```
