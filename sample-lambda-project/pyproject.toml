@@ -31,10 +31,20 @@ pydantic = "^2.5.0"
 optional = true
 
 [tool.poetry.group.framework.dependencies]
-# Pin to specific version tag (RECOMMENDED for production)
+# ----------------------------------------
+# Choose ONE option below (uncomment only one):
+# ----------------------------------------
+
+# OPTION 1: Stable tag (RECOMMENDED for production)
 test-common-framework = {git = "https://github.com/amithasarath/test_common_framework.git", tag = "v0.1.5"}
 
-# Or use latest from main branch (for development)
+# OPTION 2: Dev branch - for testing alpha versions (e.g., 0.3.2-alpha.1)
+# test-common-framework = {git = "https://github.com/amithasarath/test_common_framework.git", branch = "dev"}
+
+# OPTION 3: Feature branch - for testing feature versions (e.g., 0.3.2-feature.1)
+# test-common-framework = {git = "https://github.com/amithasarath/test_common_framework.git", branch = "feature/your-feature-name"}
+
+# OPTION 4: Main branch - latest stable (auto-updates, less predictable)
 # test-common-framework = {git = "https://github.com/amithasarath/test_common_framework.git", branch = "main"}
 
 [build-system]
