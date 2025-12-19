@@ -11,18 +11,6 @@ keywords = ["utilities", "common", "framework"]
 [tool.poetry.dependencies]
 python = "^3.9"
 
-[tool.poetry.group.dev.dependencies]
-pytest = "^7.4.0"
-black = "^23.0.0"
-flake8 = "^6.0.0"
-
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
-
-[tool.black]
-line-length = 88
-target-version = ['py39']
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
