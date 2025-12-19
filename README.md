@@ -91,20 +91,37 @@ description = "My Lambda function"
 [tool.poetry.dependencies]
 python = "^3.11"
 
-# Option A: Pin to specific version (RECOMMENDED for production)
+# ============================================
+# Private package from GitHub (this framework)
+# ============================================
 # Change "v0.1.1" to the version you need
 test-common-framework = {git = "https://github.com/amithasarath/test_common_framework.git", tag = "v0.1.1"}
 
-# Option B: Use latest from main branch
-# test-common-framework = {git = "https://github.com/amithasarath/test_common_framework.git", branch = "main"}
+# ============================================
+# Public packages from PyPI
+# ============================================
+requests = "^2.31.0"
+watchtower = "^3.0.1"
+opencv-python-headless = "^4.8.0"    # Use headless for Lambda (no GUI dependencies)
+boto3 = "^1.34.0"
+pydantic = "^2.5.0"
 
-# Option C: Use specific commit
-# test-common-framework = {git = "https://github.com/amithasarath/test_common_framework.git", rev = "abc123"}
+# Add any other packages you need...
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 ```
+
+**All packages listed here will be included in the Lambda layer.**
+
+#### Version Pinning Options for test-common-framework
+
+| Method | Syntax | Use Case |
+|--------|--------|----------|
+| Tag (recommended) | `tag = "v0.1.1"` | Production - locked to specific release |
+| Branch | `branch = "main"` | Development - always get latest |
+| Commit | `rev = "abc123"` | Lock to exact commit |
 
 ### Step 2: Create Lambda Layer via GitHub Actions
 
@@ -279,6 +296,10 @@ jobs:
 
 ```python
 # lambda_function.py
+
+# ============================================
+# Import from test-common-framework (private)
+# ============================================
 from test_common_framework import __version__
 from test_common_framework.utils import (
     setup_logger,
@@ -287,23 +308,58 @@ from test_common_framework.utils import (
     get_nested_value,
 )
 
-# Setup logger
+# ============================================
+# Import from public packages (PyPI)
+# ============================================
+import requests
+import watchtower
+import cv2  # opencv-python-headless
+import boto3
+from pydantic import BaseModel
+
+# Setup logger with CloudWatch via watchtower
+import logging
 logger = setup_logger("my_lambda")
+
+# Add CloudWatch handler
+cw_handler = watchtower.CloudWatchLogHandler(log_group="my-lambda-logs")
+logger.addHandler(cw_handler)
+
 
 def lambda_handler(event, context):
     logger.info(f"Using test-common-framework version: {__version__}")
 
-    # Parse incoming JSON safely
+    # Parse incoming JSON safely (from test-common-framework)
     body = safe_json_loads(event.get("body", "{}"), default={})
 
-    # Get nested values safely
+    # Get nested values safely (from test-common-framework)
     user_id = get_nested_value(body, "user.id", default="unknown")
+
+    # Use requests (public package)
+    response = requests.get("https://api.example.com/data")
+
+    # Use opencv (public package)
+    # cv2.imread(), cv2.resize(), etc.
 
     return {
         "statusCode": 200,
         "body": f"Processed request for user: {user_id}"
     }
 ```
+
+### Important: Lambda Layer Size Limits
+
+| Limit | Size |
+|-------|------|
+| Single layer (zipped) | 50 MB |
+| Single layer (unzipped) | 250 MB |
+| All layers combined (unzipped) | 250 MB |
+
+**Note:** `opencv-python-headless` is large (~50MB). If you hit size limits:
+
+1. **Split into multiple layers** - one for opencv, one for other packages
+2. **Use Lambda container images** - no size limit for container-based Lambdas
+3. **Remove unused packages** - only include what you need
 
 ### Required GitHub Secrets
 
