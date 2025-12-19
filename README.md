@@ -107,6 +107,41 @@ git commit -m "major: redesign API"
 '0.1.6'
 ```
 
+### GitHub Actions Workflows
+
+| File | Trigger | Purpose |
+|------|---------|---------|
+| **ci.yml** | Push to `main`/`develop`, PRs to `main` | Runs CI checks (installs dependencies) |
+| **version-bump.yml** | Push to `main` | Auto-bumps version, updates `version.py`, creates git tag |
+| **dev-version.yml** | Push to non-main branches | Creates pre-release versions (alpha/feature) |
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                  test_common_framework WORKFLOWS                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Push to main                    Push to dev/feature/*          │
+│  ─────────────                   ──────────────────────         │
+│       │                                   │                     │
+│       ▼                                   ▼                     │
+│  ┌─────────────┐                 ┌─────────────────┐            │
+│  │ ci.yml      │                 │ dev-version.yml │            │
+│  │ (install)   │                 │ (alpha/feature) │            │
+│  └─────────────┘                 └─────────────────┘            │
+│       │                                   │                     │
+│       ▼                                   ▼                     │
+│  ┌─────────────────┐             Version: 0.3.2-alpha.1         │
+│  │ version-bump.yml│             Version: 0.3.2-feature.1       │
+│  │ (bump + tag)    │                                            │
+│  └─────────────────┘                                            │
+│       │                                                         │
+│       ▼                                                         │
+│  Version: 0.3.3                                                 │
+│  Tag: v0.3.3                                                    │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
 ## Using in AWS Lambda Projects
 
 ### Step 1: Add Dependency to Lambda Project
