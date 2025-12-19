@@ -1,5 +1,9 @@
 name: Deploy Lambda Function
 
+# ============================================
+# Deploys Lambda function code and attaches BOTH layers
+# ============================================
+
 on:
   push:
     branches: [main]
@@ -12,7 +16,8 @@ env:
   PYTHON_VERSION: "3.11"
   AWS_REGION: "us-east-1"
   FUNCTION_NAME: "my-lambda-function"
-  LAYER_NAME: "my-lambda-dependencies"
+  PYPI_LAYER_NAME: "pypi-dependencies-layer"
+  FRAMEWORK_LAYER_NAME: "framework-layer"
 
 jobs:
   deploy-lambda:
@@ -30,26 +35,42 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       # ============================================
-      # Get the latest layer version from AWS
+      # Get latest version of BOTH layers
       # ============================================
-      - name: Get latest layer version
-        id: get-layer
+      - name: Get latest PyPI layer version
+        id: get-pypi-layer
         run: |
           LAYER_ARN=$(aws lambda list-layer-versions \
-            --layer-name ${{ env.LAYER_NAME }} \
+            --layer-name ${{ env.PYPI_LAYER_NAME }} \
             --query 'LayerVersions[0].LayerVersionArn' \
             --output text)
 
           if [ "$LAYER_ARN" == "None" ] || [ -z "$LAYER_ARN" ]; then
-            echo "ERROR: No layer found. Please run build-layer workflow first."
+            echo "ERROR: PyPI layer not found. Run build-pypi-layer workflow first."
             exit 1
           fi
 
-          echo "layer_arn=$LAYER_ARN" >> $GITHUB_OUTPUT
-          echo "Using layer: $LAYER_ARN"
+          echo "pypi_layer_arn=$LAYER_ARN" >> $GITHUB_OUTPUT
+          echo "PyPI Layer: $LAYER_ARN"
+
+      - name: Get latest Framework layer version
+        id: get-framework-layer
+        run: |
+          LAYER_ARN=$(aws lambda list-layer-versions \
+            --layer-name ${{ env.FRAMEWORK_LAYER_NAME }} \
+            --query 'LayerVersions[0].LayerVersionArn' \
+            --output text)
+
+          if [ "$LAYER_ARN" == "None" ] || [ -z "$LAYER_ARN" ]; then
+            echo "ERROR: Framework layer not found. Run build-framework-layer workflow first."
+            exit 1
+          fi
+
+          echo "framework_layer_arn=$LAYER_ARN" >> $GITHUB_OUTPUT
+          echo "Framework Layer: $LAYER_ARN"
 
       # ============================================
-      # Package only YOUR code (dependencies in layer)
+      # Package only YOUR code (dependencies in layers)
       # ============================================
       - name: Package Lambda function
         run: |
@@ -70,22 +91,27 @@ jobs:
             --function-name ${{ env.FUNCTION_NAME }}
 
       # ============================================
-      # Attach the layer to Lambda
+      # Attach BOTH layers to Lambda
       # ============================================
-      - name: Attach Layer to Lambda
+      - name: Attach both layers to Lambda
         run: |
-          LAYER_ARN="${{ steps.get-layer.outputs.layer_arn }}"
-          echo "Attaching layer: $LAYER_ARN"
+          PYPI_LAYER="${{ steps.get-pypi-layer.outputs.pypi_layer_arn }}"
+          FRAMEWORK_LAYER="${{ steps.get-framework-layer.outputs.framework_layer_arn }}"
+
+          echo "Attaching layers:"
+          echo "  1. PyPI Layer: $PYPI_LAYER"
+          echo "  2. Framework Layer: $FRAMEWORK_LAYER"
 
           aws lambda update-function-configuration \
             --function-name ${{ env.FUNCTION_NAME }} \
-            --layers "$LAYER_ARN"
+            --layers "$PYPI_LAYER" "$FRAMEWORK_LAYER"
 
       - name: Summary
         run: |
-          echo "## Lambda Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "## Lambda Deployed with Two Layers" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| Function | ${{ env.FUNCTION_NAME }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Layer | ${{ steps.get-layer.outputs.layer_arn }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| PyPI Layer | ${{ steps.get-pypi-layer.outputs.pypi_layer_arn }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Framework Layer | ${{ steps.get-framework-layer.outputs.framework_layer_arn }} |" >> $GITHUB_STEP_SUMMARY

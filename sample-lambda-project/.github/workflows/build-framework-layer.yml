@@ -1,20 +1,24 @@
-name: Build and Publish Lambda Layer
+name: Build Framework Layer
+
+# ============================================
+# LAYER 2: test_common_framework (private GitHub package)
+# This layer rebuilds when framework version is updated
+# ============================================
 
 on:
   push:
     branches: [main]
     paths:
-      - 'pyproject.toml'      # Trigger when dependencies change
-      - 'poetry.lock'
+      - 'pyproject.toml'      # When framework version changes
   workflow_dispatch:          # Allow manual trigger
 
 env:
   PYTHON_VERSION: "3.11"
   AWS_REGION: "us-east-1"
-  LAYER_NAME: "my-lambda-dependencies"
+  LAYER_NAME: "framework-layer"
 
 jobs:
-  build-layer:
+  build-framework-layer:
     runs-on: ubuntu-latest
 
     steps:
@@ -32,28 +36,28 @@ jobs:
           version: latest
 
       # ============================================
-      # Configure Git to access test_common_framework from GitHub
+      # Configure Git to access private GitHub repo
       # ============================================
       - name: Configure Git for private GitHub repos
         run: |
           git config --global url."https://${{ secrets.GH_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
       # ============================================
-      # Install ALL dependencies using Poetry
+      # Install ONLY test_common_framework (not PyPI packages)
       # ============================================
-      - name: Install dependencies with Poetry
+      - name: Install framework only
         run: |
           poetry config virtualenvs.in-project true
-          poetry install --only main --no-interaction
+          poetry install --only framework --no-interaction
 
-          echo "=== Installed packages ==="
+          echo "=== Installed framework package ==="
           poetry show
 
-          echo "=== test_common_framework version ==="
+          echo "=== Framework version ==="
           poetry show test-common-framework
 
       # ============================================
-      # Build Lambda Layer structure
+      # Build Lambda Layer
       # ============================================
       - name: Build Lambda Layer
         run: |
@@ -72,9 +76,9 @@ jobs:
 
       - name: Package Lambda Layer
         run: |
-          cd layer && zip -r ../layer.zip python
-          echo "=== Layer zip size ==="
-          ls -lh ../layer.zip
+          cd layer && zip -r ../framework-layer.zip python
+          echo "=== Framework Layer zip size ==="
+          ls -lh ../framework-layer.zip
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -83,27 +87,27 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Publish Lambda Layer
-        id: publish-layer
+      - name: Publish Framework Layer
         run: |
+          # Get framework version
           FRAMEWORK_VERSION=$(poetry show test-common-framework 2>/dev/null | grep 'version' | awk '{print $3}' || echo "unknown")
 
           LAYER_ARN=$(aws lambda publish-layer-version \
             --layer-name ${{ env.LAYER_NAME }} \
-            --description "Dependencies with test_common_framework v${FRAMEWORK_VERSION}" \
-            --zip-file fileb://layer.zip \
+            --description "test_common_framework v${FRAMEWORK_VERSION}" \
+            --zip-file fileb://framework-layer.zip \
             --compatible-runtimes python${{ env.PYTHON_VERSION }} \
             --query 'LayerVersionArn' \
             --output text)
 
-          echo "layer_arn=$LAYER_ARN" >> $GITHUB_OUTPUT
-          echo "=== Published Layer ==="
+          echo "=== Published Framework Layer ==="
           echo "$LAYER_ARN"
+          echo "Framework version: $FRAMEWORK_VERSION"
 
       - name: Summary
         run: |
-          echo "## Lambda Layer Published" >> $GITHUB_STEP_SUMMARY
+          FRAMEWORK_VERSION=$(poetry show test-common-framework 2>/dev/null | grep 'version' | awk '{print $3}' || echo "unknown")
+          echo "## Framework Layer Published" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Layer ARN:** \`${{ steps.publish-layer.outputs.layer_arn }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Use this ARN to attach the layer to your Lambda function." >> $GITHUB_STEP_SUMMARY
+          echo "**Layer Name:** ${{ env.LAYER_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Framework Version:** ${FRAMEWORK_VERSION}" >> $GITHUB_STEP_SUMMARY

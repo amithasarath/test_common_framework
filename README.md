@@ -161,209 +161,109 @@ build-backend = "poetry.core.masonry.api"
 2. **You update Lambda project's `pyproject.toml`** → change `tag = "v0.1.5"`
 3. **Lambda project CI/CD runs** → builds layer with new version, deploys Lambda
 
-### Step 2: Lambda Project GitHub Actions Workflows
+### Step 2: Lambda Project - Two Separate Layers
 
-Create **two separate workflows** in your Lambda project repository:
+Use **two separate layers** for better separation:
+1. **PyPI Layer** - Public packages (rarely changes)
+2. **Framework Layer** - test_common_framework (changes when version updated)
 
-#### Workflow 1: build-layer.yml (Builds Lambda Layer)
+#### pyproject.toml with Two Dependency Groups
 
-**Triggers when:** `pyproject.toml` or `poetry.lock` changes
+```toml
+[tool.poetry.dependencies]
+python = "^3.11"
 
-Create `.github/workflows/build-layer.yml`:
+# LAYER 1: PyPI packages (public)
+[tool.poetry.group.pypi]
+optional = true
 
-```yaml
-name: Build and Publish Lambda Layer
+[tool.poetry.group.pypi.dependencies]
+requests = "^2.31.0"
+watchtower = "^3.0.1"
+opencv-python-headless = "^4.8.0"
+boto3 = "^1.34.0"
+pydantic = "^2.5.0"
 
-on:
-  push:
-    branches: [main]
-    paths:
-      - 'pyproject.toml'      # Trigger when dependencies change
-      - 'poetry.lock'
-  workflow_dispatch:          # Allow manual trigger
+# LAYER 2: Framework (private GitHub)
+[tool.poetry.group.framework]
+optional = true
 
-env:
-  PYTHON_VERSION: "3.11"
-  AWS_REGION: "us-east-1"
-  LAYER_NAME: "my-lambda-dependencies"
-
-jobs:
-  build-layer:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
-        with:
-          version: latest
-
-      - name: Configure Git for private GitHub repos
-        run: |
-          git config --global url."https://${{ secrets.GH_TOKEN }}@github.com/".insteadOf "https://github.com/"
-
-      - name: Install dependencies with Poetry
-        run: |
-          poetry config virtualenvs.in-project true
-          poetry install --only main --no-interaction
-
-          echo "=== Installed packages ==="
-          poetry show
-
-      - name: Build Lambda Layer
-        run: |
-          mkdir -p layer/python/lib/python${{ env.PYTHON_VERSION }}/site-packages
-
-          cp -r .venv/lib/python${{ env.PYTHON_VERSION }}/site-packages/* \
-            layer/python/lib/python${{ env.PYTHON_VERSION }}/site-packages/
-
-          # Remove unnecessary files
-          find layer -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-          find layer -type f -name "*.pyc" -delete 2>/dev/null || true
-          find layer -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
-
-      - name: Package Lambda Layer
-        run: |
-          cd layer && zip -r ../layer.zip python
-          ls -lh ../layer.zip
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Publish Lambda Layer
-        run: |
-          FRAMEWORK_VERSION=$(poetry show test-common-framework 2>/dev/null | grep 'version' | awk '{print $3}' || echo "unknown")
-
-          aws lambda publish-layer-version \
-            --layer-name ${{ env.LAYER_NAME }} \
-            --description "Dependencies with test_common_framework v${FRAMEWORK_VERSION}" \
-            --zip-file fileb://layer.zip \
-            --compatible-runtimes python${{ env.PYTHON_VERSION }}
+[tool.poetry.group.framework.dependencies]
+test-common-framework = {git = "https://github.com/amithasarath/test_common_framework.git", tag = "v0.1.5"}
 ```
 
-#### Workflow 2: deploy-lambda.yml (Deploys Lambda Function)
+#### Three Separate Workflows
 
-**Triggers when:** `lambda_function.py` or `src/**` changes
+| Workflow | File | Triggers On | What It Does |
+|----------|------|-------------|--------------|
+| **Build PyPI Layer** | `build-pypi-layer.yml` | `pyproject.toml` changes | `poetry install --only pypi` → Layer 1 |
+| **Build Framework Layer** | `build-framework-layer.yml` | `pyproject.toml` changes | `poetry install --only framework` → Layer 2 |
+| **Deploy Lambda** | `deploy-lambda.yml` | `lambda_function.py` or `src/**` | Deploys code, attaches BOTH layers |
 
-Create `.github/workflows/deploy-lambda.yml`:
-
-```yaml
-name: Deploy Lambda Function
-
-on:
-  push:
-    branches: [main]
-    paths:
-      - 'lambda_function.py'   # Trigger when Lambda code changes
-      - 'src/**'
-  workflow_dispatch:           # Allow manual trigger
-
-env:
-  PYTHON_VERSION: "3.11"
-  AWS_REGION: "us-east-1"
-  FUNCTION_NAME: "my-lambda-function"
-  LAYER_NAME: "my-lambda-dependencies"
-
-jobs:
-  deploy-lambda:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Get latest layer version
-        id: get-layer
-        run: |
-          LAYER_ARN=$(aws lambda list-layer-versions \
-            --layer-name ${{ env.LAYER_NAME }} \
-            --query 'LayerVersions[0].LayerVersionArn' \
-            --output text)
-
-          if [ "$LAYER_ARN" == "None" ] || [ -z "$LAYER_ARN" ]; then
-            echo "ERROR: No layer found. Run build-layer workflow first."
-            exit 1
-          fi
-
-          echo "layer_arn=$LAYER_ARN" >> $GITHUB_OUTPUT
-          echo "Using layer: $LAYER_ARN"
-
-      - name: Package Lambda function
-        run: |
-          zip -r function.zip lambda_function.py src/
-          ls -lh function.zip
-
-      - name: Deploy Lambda function
-        run: |
-          aws lambda update-function-code \
-            --function-name ${{ env.FUNCTION_NAME }} \
-            --zip-file fileb://function.zip
-
-          aws lambda wait function-updated \
-            --function-name ${{ env.FUNCTION_NAME }}
-
-      - name: Attach Layer to Lambda
-        run: |
-          aws lambda update-function-configuration \
-            --function-name ${{ env.FUNCTION_NAME }} \
-            --layers "${{ steps.get-layer.outputs.layer_arn }}"
-```
-
-### Two Separate Workflows Execution Flow
+#### Two-Layer Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                    LAMBDA PROJECT: Two Separate Workflows                   │
+│                           LAMBDA FUNCTION                                   │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  WORKFLOW 1: build-layer.yml              WORKFLOW 2: deploy-lambda.yml     │
-│  ─────────────────────────────            ──────────────────────────────    │
-│  Triggers: pyproject.toml changes         Triggers: lambda_function.py      │
-│            poetry.lock changes                      src/** changes          │
-│                                                                             │
-│  ┌─────────────────────────────┐          ┌─────────────────────────────┐  │
-│  │ 1. poetry install           │          │ 1. Get latest layer ARN     │  │
-│  │    ├── test_common_framework│          │    from AWS                 │  │
-│  │    ├── requests             │          │                             │  │
-│  │    ├── watchtower           │          │ 2. Zip lambda code only     │  │
-│  │    └── opencv-headless      │          │    (small package!)         │  │
-│  │                             │          │                             │  │
-│  │ 2. Copy .venv → layer/      │          │ 3. Deploy function code     │  │
-│  │ 3. Zip layer                │          │                             │  │
-│  │ 4. Publish layer to AWS     │          │ 4. Attach layer to Lambda   │  │
-│  └─────────────────────────────┘          └─────────────────────────────┘  │
-│              │                                         │                    │
-│              ▼                                         ▼                    │
-│     Layer ARN stored in AWS ◄──────────────── Fetches latest layer ARN     │
+│  ┌─────────────────────────────┐   ┌─────────────────────────────┐         │
+│  │  LAYER 1: PyPI packages     │   │  LAYER 2: Framework         │         │
+│  │  pypi-dependencies-layer    │   │  framework-layer            │         │
+│  ├─────────────────────────────┤   ├─────────────────────────────┤         │
+│  │  ├── requests/              │   │  └── test_common_framework/ │         │
+│  │  ├── watchtower/            │   │      ├── __init__.py        │         │
+│  │  ├── opencv-python-headless/│   │      ├── version.py         │         │
+│  │  ├── boto3/                 │   │      └── utils.py           │         │
+│  │  └── pydantic/              │   │                             │         │
+│  │                             │   │                             │         │
+│  │  Rarely changes             │   │  Changes when framework     │         │
+│  │  (stable versions)          │   │  version is updated         │         │
+│  └─────────────────────────────┘   └─────────────────────────────┘         │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### When Each Workflow Runs
+#### Workflow Execution Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         THREE SEPARATE WORKFLOWS                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  WORKFLOW 1                    WORKFLOW 2                 WORKFLOW 3        │
+│  build-pypi-layer.yml          build-framework-layer.yml  deploy-lambda.yml │
+│  ────────────────────          ───────────────────────    ─────────────────│
+│  Trigger: pyproject.toml       Trigger: pyproject.toml    Trigger: code    │
+│                                                                             │
+│  ┌───────────────────┐         ┌───────────────────┐     ┌───────────────┐ │
+│  │ poetry install    │         │ poetry install    │     │ Get both      │ │
+│  │ --only pypi       │         │ --only framework  │     │ layer ARNs    │ │
+│  │                   │         │                   │     │               │ │
+│  │ Build layer       │         │ Build layer       │     │ Zip code      │ │
+│  │ Publish to AWS    │         │ Publish to AWS    │     │ Deploy        │ │
+│  └───────────────────┘         └───────────────────┘     │ Attach layers │ │
+│           │                             │                └───────────────┘ │
+│           ▼                             ▼                        │         │
+│  pypi-dependencies-layer       framework-layer                   │         │
+│           │                             │                        │         │
+│           └─────────────────────────────┴────────────────────────┘         │
+│                                         │                                   │
+│                                         ▼                                   │
+│                              Lambda with BOTH layers attached               │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### When Each Workflow Runs
 
 | Change Made | Workflow Triggered | What Happens |
 |-------------|-------------------|--------------|
-| Update `pyproject.toml` (new framework version) | `build-layer.yml` | New layer published to AWS |
-| Update `lambda_function.py` | `deploy-lambda.yml` | Lambda code deployed, uses existing layer |
-| Update both | Both workflows run | Layer rebuilt, then Lambda deployed |
+| Update PyPI package version | `build-pypi-layer.yml` | PyPI layer rebuilt |
+| Update framework version tag | `build-framework-layer.yml` | Framework layer rebuilt |
+| Update `lambda_function.py` | `deploy-lambda.yml` | Code deployed, uses existing layers |
+
+**See `sample-lambda-project/` for complete workflow files.**
 
 ### Step 4: Use in Your Lambda Code
 

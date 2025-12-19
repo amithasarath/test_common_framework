@@ -8,23 +8,40 @@ authors = ["Your Name <your.email@example.com>"]
 python = "^3.11"
 
 # ============================================
-# PRIVATE PACKAGE: test_common_framework
-# Pulled from GitHub repository
+# LAYER 1: PyPI packages (public)
+# These go into: pypi-dependencies-layer
+# Rarely changes - rebuild only when versions updated
 # ============================================
-# Option A: Pin to specific version tag (RECOMMENDED for production)
-test-common-framework = {git = "https://github.com/amithasarath/test_common_framework.git", tag = "v0.1.5"}
+[tool.poetry.group.pypi]
+optional = true
 
-# Option B: Use latest from main branch (for development)
-# test-common-framework = {git = "https://github.com/amithasarath/test_common_framework.git", branch = "main"}
-
-# ============================================
-# PUBLIC PACKAGES: From PyPI
-# ============================================
+[tool.poetry.group.pypi.dependencies]
 requests = "^2.31.0"
 watchtower = "^3.0.1"
 opencv-python-headless = "^4.8.0"
 boto3 = "^1.34.0"
 pydantic = "^2.5.0"
+
+# ============================================
+# LAYER 2: test_common_framework (private GitHub)
+# These go into: framework-layer
+# Rebuild when framework version changes
+# ============================================
+[tool.poetry.group.framework]
+optional = true
+
+[tool.poetry.group.framework.dependencies]
+# Pin to specific version tag (RECOMMENDED for production)
+test-common-framework = {git = "https://github.com/amithasarath/test_common_framework.git", tag = "v0.1.5"}
+
+# Or use latest from main branch (for development)
+# test-common-framework = {git = "https://github.com/amithasarath/test_common_framework.git", branch = "main"}
+
+# ============================================
+# Development dependencies (not deployed)
+# ============================================
+[tool.poetry.group.dev]
+optional = true
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"
