@@ -162,22 +162,28 @@ jobs:
         run: |
           git config --global url."https://${{ secrets.GH_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
-      - name: Export dependencies to requirements.txt
+      - name: Install dependencies with Poetry
         run: |
-          poetry export -f requirements.txt --without-hashes --output requirements.txt
-          echo "=== requirements.txt ==="
-          cat requirements.txt
+          # Create virtual environment in project directory
+          poetry config virtualenvs.in-project true
+          poetry install --only main --no-interaction
+
+          echo "=== Installed packages ==="
+          poetry show
 
       - name: Build Lambda Layer structure
         run: |
           # Lambda layers require this exact directory structure
           mkdir -p layer/python/lib/python${{ env.PYTHON_VERSION }}/site-packages
 
-          # Install dependencies into layer directory
-          pip install \
-            --target layer/python/lib/python${{ env.PYTHON_VERSION }}/site-packages \
-            --requirement requirements.txt \
-            --no-cache-dir
+          # Copy installed packages from Poetry's virtual environment to layer
+          cp -r .venv/lib/python${{ env.PYTHON_VERSION }}/site-packages/* \
+            layer/python/lib/python${{ env.PYTHON_VERSION }}/site-packages/
+
+          # Remove unnecessary files to reduce layer size
+          find layer -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+          find layer -type f -name "*.pyc" -delete 2>/dev/null || true
+          find layer -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
 
           # Show what's installed
           echo "=== Installed packages ==="
@@ -201,8 +207,8 @@ jobs:
       - name: Publish Lambda Layer
         id: publish-layer
         run: |
-          # Get version from test-common-framework
-          FRAMEWORK_VERSION=$(grep "test-common-framework" requirements.txt | grep -oP '@v\K[0-9.]+' || echo "latest")
+          # Get version from test-common-framework using Poetry
+          FRAMEWORK_VERSION=$(poetry show test-common-framework --tree 2>/dev/null | head -1 | grep -oP '\d+\.\d+\.\d+' || echo "latest")
 
           # Publish layer with description
           LAYER_ARN=$(aws lambda publish-layer-version \
@@ -410,11 +416,23 @@ layer.zip
 
 ```bash
 # In your Lambda project directory
-poetry export -f requirements.txt --without-hashes -o requirements.txt
+
+# Configure Poetry to create virtualenv in project
+poetry config virtualenvs.in-project true
+
+# Install dependencies (only main, no dev)
+poetry install --only main
 
 # Create layer structure
 mkdir -p layer/python/lib/python3.11/site-packages
-pip install -t layer/python/lib/python3.11/site-packages -r requirements.txt
+
+# Copy packages from Poetry's virtual environment
+cp -r .venv/lib/python3.11/site-packages/* layer/python/lib/python3.11/site-packages/
+
+# Remove unnecessary files to reduce size
+find layer -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+find layer -type f -name "*.pyc" -delete 2>/dev/null || true
+find layer -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
 
 # Create zip
 cd layer && zip -r ../layer.zip python
