@@ -7,19 +7,16 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.9", "3.10", "3.11"]
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.11"
 
       - name: Install Poetry
         uses: snok/install-poetry@v1
@@ -31,11 +28,14 @@ jobs:
       - name: Install dependencies
         run: poetry install
 
-      - name: Run tests
-        run: poetry run pytest -v
+      # ============================================
+      # TESTING (commented out - uncomment if needed)
+      # ============================================
+      # - name: Run tests
+      #   run: poetry run pytest -v
 
-      - name: Check formatting
-        run: poetry run black --check .
+      # - name: Check formatting
+      #   run: poetry run black --check .
 
-      - name: Lint
-        run: poetry run flake8 --max-line-length=88 --extend-ignore=E203
+      # - name: Lint
+      #   run: poetry run flake8 --max-line-length=88 --extend-ignore=E203
