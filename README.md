@@ -123,12 +123,50 @@ build-backend = "poetry.core.masonry.api"
 | Branch | `branch = "main"` | Development - always get latest |
 | Commit | `rev = "abc123"` | Lock to exact commit |
 
-### Step 2: Create Lambda Layer via GitHub Actions
+### Two Repository Architecture
 
-Create `.github/workflows/build-layer.yml` in your Lambda project:
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           TWO SEPARATE REPOSITORIES                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  REPO 1: test_common_framework          REPO 2: my-lambda-project           │
+│  ─────────────────────────────          ─────────────────────────           │
+│  github.com/amithasarath/               github.com/amithasarath/            │
+│  test_common_framework                  my-lambda-project                   │
+│                                                                             │
+│  ├── test_common_framework/             ├── lambda_function.py              │
+│  │   ├── __init__.py                    ├── src/                            │
+│  │   ├── version.py                     ├── pyproject.toml  ◄── specifies  │
+│  │   └── utils.py                       │                       version     │
+│  ├── pyproject.toml                     └── .github/workflows/              │
+│  └── .github/workflows/                     └── deploy.yml                  │
+│      ├── ci.yml                                                             │
+│      └── version-bump.yml                                                   │
+│                                                                             │
+│         │                                         │                         │
+│         ▼                                         ▼                         │
+│  On merge to main:                       On merge to main:                  │
+│  - Runs tests                            - Builds layer (poetry install)    │
+│  - Bumps version (0.1.4 → 0.1.5)         - Publishes layer to AWS           │
+│  - Creates git tag (v0.1.5)              - Deploys Lambda function          │
+│                                          - Attaches layer to Lambda         │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### How It Works
+
+1. **You update test_common_framework** → new version `v0.1.5` is created automatically
+2. **You update Lambda project's `pyproject.toml`** → change `tag = "v0.1.5"`
+3. **Lambda project CI/CD runs** → builds layer with new version, deploys Lambda
+
+### Step 2: Lambda Project GitHub Actions Workflow
+
+Create `.github/workflows/deploy.yml` in your **Lambda project repository**:
 
 ```yaml
-name: Build and Deploy Lambda Layer
+name: Build Layer and Deploy Lambda
 
 on:
   push:
@@ -139,13 +177,20 @@ env:
   PYTHON_VERSION: "3.11"
   AWS_REGION: "us-east-1"
   LAYER_NAME: "common-framework-layer"
+  FUNCTION_NAME: "my-lambda-function"
 
 jobs:
+  # ============================================
+  # JOB 1: Build and Publish Lambda Layer
+  # This pulls test_common_framework from GitHub
+  # ============================================
   build-layer:
     runs-on: ubuntu-latest
+    outputs:
+      layer_arn: ${{ steps.publish-layer.outputs.layer_arn }}
 
     steps:
-      - name: Checkout code
+      - name: Checkout Lambda project code
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -160,23 +205,22 @@ jobs:
 
       - name: Configure Git for GitHub repos
         run: |
+          # This allows Poetry to pull test_common_framework from GitHub
           git config --global url."https://${{ secrets.GH_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
-      - name: Install dependencies with Poetry
+      - name: Install all dependencies with Poetry
         run: |
-          # Create virtual environment in project directory
           poetry config virtualenvs.in-project true
           poetry install --only main --no-interaction
 
-          echo "=== Installed packages ==="
+          echo "=== All installed packages (including test_common_framework) ==="
           poetry show
 
       - name: Build Lambda Layer structure
         run: |
-          # Lambda layers require this exact directory structure
           mkdir -p layer/python/lib/python${{ env.PYTHON_VERSION }}/site-packages
 
-          # Copy installed packages from Poetry's virtual environment to layer
+          # Copy ALL packages from Poetry's venv to layer
           cp -r .venv/lib/python${{ env.PYTHON_VERSION }}/site-packages/* \
             layer/python/lib/python${{ env.PYTHON_VERSION }}/site-packages/
 
@@ -185,17 +229,14 @@ jobs:
           find layer -type f -name "*.pyc" -delete 2>/dev/null || true
           find layer -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
 
-          # Show what's installed
-          echo "=== Installed packages ==="
+          echo "=== Layer contents ==="
           ls -la layer/python/lib/python${{ env.PYTHON_VERSION }}/site-packages/
 
       - name: Package Lambda Layer
         run: |
-          cd layer
-          zip -r ../layer.zip python
-          cd ..
+          cd layer && zip -r ../layer.zip python
           echo "=== Layer zip size ==="
-          ls -lh layer.zip
+          ls -lh ../layer.zip
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -204,16 +245,16 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Publish Lambda Layer
+      - name: Publish Lambda Layer to AWS
         id: publish-layer
         run: |
-          # Get version from test-common-framework using Poetry
-          FRAMEWORK_VERSION=$(poetry show test-common-framework --tree 2>/dev/null | head -1 | grep -oP '\d+\.\d+\.\d+' || echo "latest")
+          # Get test_common_framework version from Poetry
+          FRAMEWORK_VERSION=$(poetry show test-common-framework 2>/dev/null | grep 'version' | awk '{print $3}' || echo "latest")
+          echo "test_common_framework version: $FRAMEWORK_VERSION"
 
-          # Publish layer with description
           LAYER_ARN=$(aws lambda publish-layer-version \
             --layer-name ${{ env.LAYER_NAME }} \
-            --description "Common framework v${FRAMEWORK_VERSION}" \
+            --description "Dependencies including test_common_framework v${FRAMEWORK_VERSION}" \
             --zip-file fileb://layer.zip \
             --compatible-runtimes python${{ env.PYTHON_VERSION }} \
             --query 'LayerVersionArn' \
@@ -223,40 +264,16 @@ jobs:
           echo "=== Published Layer ARN ==="
           echo "$LAYER_ARN"
 
-      - name: Output Layer ARN
-        run: |
-          echo "## Lambda Layer Published" >> $GITHUB_STEP_SUMMARY
-          echo "**Layer ARN:** \`${{ steps.publish-layer.outputs.layer_arn }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Add this layer to your Lambda function to use test-common-framework." >> $GITHUB_STEP_SUMMARY
-```
-
-### Step 3: Deploy Lambda Function with Layer
-
-Create `.github/workflows/deploy-lambda.yml`:
-
-```yaml
-name: Deploy Lambda Function
-
-on:
-  push:
-    branches: [main]
-    paths:
-      - 'src/**'
-      - 'lambda_function.py'
-
-env:
-  PYTHON_VERSION: "3.11"
-  AWS_REGION: "us-east-1"
-  FUNCTION_NAME: "my-lambda-function"
-  LAYER_NAME: "common-framework-layer"
-
-jobs:
-  deploy:
+  # ============================================
+  # JOB 2: Deploy Lambda Function
+  # Runs AFTER layer is built (needs: build-layer)
+  # ============================================
+  deploy-lambda:
     runs-on: ubuntu-latest
+    needs: build-layer  # <-- Waits for layer to be ready
 
     steps:
-      - name: Checkout code
+      - name: Checkout Lambda project code
         uses: actions/checkout@v4
 
       - name: Configure AWS credentials
@@ -266,36 +283,72 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Get latest layer version
-        id: get-layer
+      - name: Package Lambda function code only
         run: |
-          LAYER_ARN=$(aws lambda list-layer-versions \
-            --layer-name ${{ env.LAYER_NAME }} \
-            --query 'LayerVersions[0].LayerVersionArn' \
-            --output text)
-          echo "layer_arn=$LAYER_ARN" >> $GITHUB_OUTPUT
-          echo "Using layer: $LAYER_ARN"
-
-      - name: Package Lambda function
-        run: |
-          # Package only your Lambda code (dependencies are in the layer)
+          # Package only YOUR code (dependencies are in the layer)
           zip -r function.zip lambda_function.py src/
+          echo "=== Function zip size ==="
+          ls -lh function.zip
 
-      - name: Deploy Lambda function
+      - name: Deploy Lambda function code
         run: |
-          # Update function code
           aws lambda update-function-code \
             --function-name ${{ env.FUNCTION_NAME }} \
             --zip-file fileb://function.zip
 
-          # Wait for update to complete
           aws lambda wait function-updated \
             --function-name ${{ env.FUNCTION_NAME }}
 
-          # Attach the layer
+      - name: Attach Layer to Lambda function
+        run: |
+          # Use the layer ARN from Job 1
+          LAYER_ARN="${{ needs.build-layer.outputs.layer_arn }}"
+          echo "Attaching layer: $LAYER_ARN"
+
           aws lambda update-function-configuration \
             --function-name ${{ env.FUNCTION_NAME }} \
-            --layers ${{ steps.get-layer.outputs.layer_arn }}
+            --layers "$LAYER_ARN"
+
+      - name: Deployment Summary
+        run: |
+          echo "## Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "**Function:** ${{ env.FUNCTION_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Layer:** ${{ needs.build-layer.outputs.layer_arn }}" >> $GITHUB_STEP_SUMMARY
+```
+
+### Workflow Execution Flow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│           Lambda Project: .github/workflows/deploy.yml          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │ JOB 1: build-layer                                        │  │
+│  ├──────────────────────────────────────────────────────────┤  │
+│  │ 1. poetry install                                         │  │
+│  │    ├── Pulls test_common_framework from GitHub (v0.1.5)   │  │
+│  │    ├── Pulls requests from PyPI                           │  │
+│  │    ├── Pulls watchtower from PyPI                         │  │
+│  │    └── Pulls opencv-python-headless from PyPI             │  │
+│  │                                                           │  │
+│  │ 2. Copy .venv → layer/                                    │  │
+│  │ 3. Zip layer                                              │  │
+│  │ 4. aws lambda publish-layer-version                       │  │
+│  │ 5. Output: layer_arn                                      │  │
+│  └────────────────────────┬─────────────────────────────────┘  │
+│                           │                                     │
+│                           ▼ needs: build-layer                  │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │ JOB 2: deploy-lambda                                      │  │
+│  ├──────────────────────────────────────────────────────────┤  │
+│  │ 1. Zip lambda_function.py + src/ (code only, small!)      │  │
+│  │ 2. aws lambda update-function-code                        │  │
+│  │ 3. aws lambda update-function-configuration --layers      │  │
+│  │    (uses layer_arn from Job 1)                            │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ### Step 4: Use in Your Lambda Code
