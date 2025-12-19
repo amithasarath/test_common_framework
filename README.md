@@ -496,35 +496,15 @@ layer.zip
 
 ### Manual Layer Creation (Local)
 
-```bash
-# In the Lambda project directory
+To create a Lambda layer manually without CI/CD:
 
-# Configure Poetry to create virtualenv in project
-poetry config virtualenvs.in-project true
-
-# Install dependencies (only main, no dev)
-poetry install --only main
-
-# Create layer structure
-mkdir -p layer/python/lib/python3.11/site-packages
-
-# Copy packages from Poetry's virtual environment
-cp -r .venv/lib/python3.11/site-packages/* layer/python/lib/python3.11/site-packages/
-
-# Remove unnecessary files to reduce size
-find layer -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-find layer -type f -name "*.pyc" -delete 2>/dev/null || true
-find layer -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
-
-# Create zip
-cd layer && zip -r ../layer.zip python
-
-# Upload to AWS
-aws lambda publish-layer-version \
-  --layer-name common-framework-layer \
-  --zip-file fileb://layer.zip \
-  --compatible-runtimes python3.11
-```
+1. **Configure Poetry** - Set Poetry to create the virtual environment inside the project folder
+2. **Install dependencies** - Install only the required dependency group (e.g., `pypi` or `framework`)
+3. **Create layer folder structure** - Create `layer/python/lib/python3.11/site-packages/`
+4. **Copy packages** - Copy all installed packages from `.venv/lib/python3.11/site-packages/` to the layer folder
+5. **Clean up** - Remove `__pycache__`, `.pyc` files, and `.dist-info` folders to reduce size
+6. **Create zip** - Zip the `python` folder inside the layer directory
+7. **Upload to AWS** - Use AWS CLI or Console to publish the layer with the zip file
 
 ### Adding a New Layer (Future Packages)
 
