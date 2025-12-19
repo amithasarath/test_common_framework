@@ -78,6 +78,8 @@ poetry run flake8
 
 ### Step 1: Add Dependency to Your Lambda Project
 
+**This is where you specify which version of test-common-framework your Lambda will use.**
+
 In your Lambda project, create or update `pyproject.toml`:
 
 ```toml
@@ -90,7 +92,8 @@ description = "My Lambda function"
 python = "^3.11"
 
 # Option A: Pin to specific version (RECOMMENDED for production)
-test-common-framework = {git = "https://github.com/amithasarath/test_common_framework.git", tag = "v1.0.0"}
+# Change "v0.1.1" to the version you need
+test-common-framework = {git = "https://github.com/amithasarath/test_common_framework.git", tag = "v0.1.1"}
 
 # Option B: Use latest from main branch
 # test-common-framework = {git = "https://github.com/amithasarath/test_common_framework.git", branch = "main"}
