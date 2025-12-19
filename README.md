@@ -141,6 +141,17 @@ on:
     branches-ignore: [main]
 ```
 
+**Note:** `branches-ignore: [main]` means "run on ALL branches EXCEPT main". This automatically covers `dev`, `stg`, `feature/*`, and any other branch without needing to list them explicitly.
+
+The `dev-version.yml` workflow determines the version prefix based on branch name:
+
+| Branch | Version Prefix | Example |
+|--------|---------------|---------|
+| `feature/*` | feature | `0.3.4-feature.1` |
+| `dev` | alpha | `0.3.4-alpha.1` |
+| `stg` | beta | `0.3.4-beta.1` |
+| any other | alpha | `0.3.4-alpha.1` |
+
 #### When Each Workflow Runs
 
 Since `main` branch is protected (PR only), the actual execution is:
