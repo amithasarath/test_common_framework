@@ -7,20 +7,20 @@ Common utility functions for reuse across projects.
 ### From GitHub (via Poetry)
 
 ```bash
-# Add to your project's pyproject.toml
-poetry add git+https://github.com/your-username/test_common_framework.git
+# Add to the project's pyproject.toml
+poetry add git+https://github.com/org/test_common_framework.git
 
 # Or with a specific version/tag
-poetry add git+https://github.com/your-username/test_common_framework.git@v1.0.0
+poetry add git+https://github.com/org/test_common_framework.git@v1.0.0
 
 # Or with a specific branch
-poetry add git+https://github.com/your-username/test_common_framework.git@main
+poetry add git+https://github.com/org/test_common_framework.git@main
 ```
 
 ### For Development
 
 ```bash
-git clone https://github.com/your-username/test_common_framework.git
+git clone https://github.com/org/test_common_framework.git
 cd test_common_framework
 poetry install
 ```
@@ -66,7 +66,7 @@ def unstable_function():
 
 ### Automatic Version Bumping
 
-When you push to `main`, the version is **automatically bumped** based on your commit message prefix:
+On push to `main`, the version is **automatically bumped** based on the commit message prefix:
 
 | Commit Message Prefix | Bump Type | Example |
 |----------------------|-----------|---------|
@@ -109,11 +109,11 @@ git commit -m "major: redesign API"
 
 ## Using in AWS Lambda Projects
 
-### Step 1: Add Dependency to Your Lambda Project
+### Step 1: Add Dependency to Lambda Project
 
-**This is where you specify which version of test-common-framework your Lambda will use.**
+**This specifies which version of test-common-framework the Lambda will use.**
 
-In your Lambda project, create or update `pyproject.toml`:
+In the Lambda project, create or update `pyproject.toml`:
 
 ```toml
 [tool.poetry]
@@ -127,8 +127,8 @@ python = "^3.11"
 # ============================================
 # Private package from GitHub (this framework)
 # ============================================
-# Change "v0.1.1" to the version you need
-test-common-framework = {git = "https://github.com/amithasarath/test_common_framework.git", tag = "v0.1.1"}
+# Change "v0.1.1" to the required version
+test-common-framework = {git = "https://github.com/org/test_common_framework.git", tag = "v0.1.1"}
 
 # ============================================
 # Public packages from PyPI
@@ -139,7 +139,7 @@ opencv-python-headless = "^4.8.0"    # Use headless for Lambda (no GUI dependenc
 boto3 = "^1.34.0"
 pydantic = "^2.5.0"
 
-# Add any other packages you need...
+# Add any other required packages...
 
 [build-system]
 requires = ["poetry-core"]
@@ -165,7 +165,7 @@ build-backend = "poetry.core.masonry.api"
 │                                                                             │
 │  REPO 1: test_common_framework          REPO 2: my-lambda-project           │
 │  ─────────────────────────────          ─────────────────────────           │
-│  github.com/amithasarath/               github.com/amithasarath/            │
+│  github.com/org/                        github.com/org/                     │
 │  test_common_framework                  my-lambda-project                   │
 │                                                                             │
 │  ├── test_common_framework/             ├── lambda_function.py              │
@@ -190,8 +190,8 @@ build-backend = "poetry.core.masonry.api"
 
 ### How It Works
 
-1. **You update test_common_framework** → new version `v0.1.5` is created automatically
-2. **You update Lambda project's `pyproject.toml`** → change `tag = "v0.1.5"`
+1. **Update test_common_framework** → new version `v0.1.5` is created automatically
+2. **Update Lambda project's `pyproject.toml`** → change `tag = "v0.1.5"`
 3. **Lambda project CI/CD runs** → builds layer with new version, deploys Lambda
 
 ### Step 2: Lambda Project - Two Separate Layers
@@ -222,7 +222,7 @@ pydantic = "^2.5.0"
 optional = true
 
 [tool.poetry.group.framework.dependencies]
-test-common-framework = {git = "https://github.com/amithasarath/test_common_framework.git", tag = "v0.1.5"}
+test-common-framework = {git = "https://github.com/org/test_common_framework.git", tag = "v0.1.5"}
 ```
 
 #### Three Separate Workflows
@@ -298,7 +298,7 @@ test-common-framework = {git = "https://github.com/amithasarath/test_common_fram
 
 **See `sample-lambda-project/` for complete workflow files.**
 
-### Step 4: Use in Your Lambda Code
+### Step 4: Use in Lambda Code
 
 ```python
 # lambda_function.py
@@ -361,15 +361,15 @@ def lambda_handler(event, context):
 | Single layer (unzipped) | 250 MB |
 | All layers combined (unzipped) | 250 MB |
 
-**Note:** `opencv-python-headless` is large (~50MB). If you hit size limits:
+**Note:** `opencv-python-headless` is large (~50MB). If size limits are exceeded:
 
 1. **Split into multiple layers** - one for opencv, one for other packages
 2. **Use Lambda container images** - no size limit for container-based Lambdas
-3. **Remove unused packages** - only include what you need
+3. **Remove unused packages** - only include required packages
 
 ### Required GitHub Secrets
 
-Add these secrets to your Lambda project repository:
+Add these secrets to the Lambda project repository:
 
 | Secret | Description |
 |--------|-------------|
@@ -381,18 +381,18 @@ Add these secrets to your Lambda project repository:
 
 1. Go to GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic)
 2. Generate new token with `repo` scope
-3. Copy and add as `GH_TOKEN` secret in your Lambda project
+3. Copy and add as `GH_TOKEN` secret in the Lambda project
 
 ### Updating to a New Version
 
-To update test-common-framework in your Lambda project:
+To update test-common-framework in the Lambda project:
 
 ```bash
 # Update to a specific version
-poetry add git+https://github.com/amithasarath/test_common_framework.git@v1.1.0
+poetry add git+https://github.com/org/test_common_framework.git@v1.1.0
 
 # Or update to latest main
-poetry add git+https://github.com/amithasarath/test_common_framework.git@main
+poetry add git+https://github.com/org/test_common_framework.git@main
 ```
 
 Then push to trigger the CI/CD pipeline which will rebuild the layer.
@@ -415,7 +415,7 @@ layer.zip
 ### Manual Layer Creation (Local)
 
 ```bash
-# In your Lambda project directory
+# In the Lambda project directory
 
 # Configure Poetry to create virtualenv in project
 poetry config virtualenvs.in-project true
@@ -458,7 +458,7 @@ optional = true
 [tool.poetry.group.pypi.dependencies]
 requests = "^2.31.0"
 
-# NEW LAYER: Add your new group
+# NEW LAYER: Add new group
 [tool.poetry.group.ml]
 optional = true
 
