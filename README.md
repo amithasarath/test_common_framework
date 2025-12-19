@@ -315,6 +315,52 @@ test-common-framework = {git = "https://github.com/org/test_common_framework.git
 | **Build Framework Layer** | `build-framework-layer.yml` | `pyproject.toml` changes | `poetry install --only framework` → Layer 2 |
 | **Deploy Lambda** | `deploy-lambda.yml` | `lambda_function.py` or `src/**` | Deploys code, attaches BOTH layers |
 
+#### How Layer is Created Automatically
+
+Each layer workflow performs these steps automatically:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                  AUTOMATIC LAYER CREATION                       │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Step 1: Install packages                                       │
+│  └── poetry install --only <group>                              │
+│      └── Packages installed to: .venv/lib/python3.11/site-packages/│
+│                                                                 │
+│  Step 2: Create Lambda layer folder structure                   │
+│  └── Creates: layer/python/lib/python3.11/site-packages/        │
+│                                                                 │
+│  Step 3: Copy packages to layer folder                          │
+│  └── Copies all packages from .venv to layer folder             │
+│                                                                 │
+│  Step 4: Clean up unnecessary files                             │
+│  └── Removes __pycache__, .pyc, .dist-info to reduce size       │
+│                                                                 │
+│  Step 5: Create zip file                                        │
+│  └── Zips the python/ folder → layer.zip                        │
+│                                                                 │
+│  Step 6: Publish to AWS Lambda                                  │
+│  └── Uploads layer.zip and creates new layer version            │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Final Layer Structure (created automatically):**
+
+```
+layer.zip
+└── python/
+    └── lib/
+        └── python3.11/
+            └── site-packages/
+                ├── requests/
+                ├── boto3/
+                └── ... (all packages)
+```
+
+**Note:** PyPI layer is created once and rarely changes. Framework layer rebuilds when version tag is updated.
+
 #### Two-Layer Architecture
 
 ```
