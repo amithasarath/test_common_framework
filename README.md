@@ -406,6 +406,58 @@ layer.zip
 
 **Note:** PyPI layer is created once and rarely changes. Framework layer rebuilds when version tag is updated.
 
+#### Layer Versioning (How Updates Work)
+
+AWS Lambda layers use **versioning**. Each update creates a new version (old versions are kept):
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                  LAYER VERSIONING                               │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Layer: pypi-dependencies-layer                                 │
+│                                                                 │
+│  Version 1 (old)     arn:aws:lambda:...:layer:1  ← Still exists │
+│  Version 2 (old)     arn:aws:lambda:...:layer:2  ← Still exists │
+│  Version 3 (new)     arn:aws:lambda:...:layer:3  ← Lambda uses  │
+│                                                                 │
+│  Lambda function updated to point to → Version 3                │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**No deletion happens.** Each `publish-layer-version` creates a new version number. Lambda is updated to use the latest version.
+
+#### How GitHub Actions Controls AWS
+
+GitHub Actions connects to AWS using credentials stored as secrets:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                  GITHUB → AWS CONNECTION                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  GitHub Secrets (configured in repo settings):                  │
+│  ├── AWS_ACCESS_KEY_ID      ← IAM user access key               │
+│  └── AWS_SECRET_ACCESS_KEY  ← IAM user secret key               │
+│                                                                 │
+│  Workflow steps:                                                │
+│  1. configure-aws-credentials  ← Authenticates with AWS         │
+│  2. aws lambda publish-layer-version  ← Uploads layer           │
+│  3. aws lambda update-function-configuration  ← Attaches layer  │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### CLI vs Infrastructure-as-Code
+
+| Approach | Tool | What It Does |
+|----------|------|--------------|
+| **Current (CLI)** | AWS CLI in GitHub Actions | Updates existing Lambda and layers |
+| **IaC** | Terraform, CloudFormation, CDK | Creates and manages entire infrastructure |
+
+**Current approach assumes Lambda function already exists in AWS.** For full infrastructure management, use Terraform or CloudFormation.
+
 #### Two-Layer Architecture
 
 ```
