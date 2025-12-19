@@ -37,16 +37,6 @@ test-common-framework = {git = "https://github.com/amithasarath/test_common_fram
 # Or use latest from main branch (for development)
 # test-common-framework = {git = "https://github.com/amithasarath/test_common_framework.git", branch = "main"}
 
-# ============================================
-# Development dependencies (not deployed)
-# ============================================
-[tool.poetry.group.dev]
-optional = true
-
-[tool.poetry.group.dev.dependencies]
-pytest = "^7.4.0"
-black = "^23.0.0"
-
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
