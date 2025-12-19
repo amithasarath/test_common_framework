@@ -61,6 +61,49 @@ def unstable_function():
 - **Main branch**: Rounded versions (e.g., `1.0.0`, `1.1.0`, `2.0.0`)
 - **Feature branches**: Sub-versions (e.g., `1.0.0-dev.1`, `1.0.0-alpha.1`)
 
+### Automatic Version Bumping
+
+When you push to `main`, the version is **automatically bumped** based on your commit message prefix:
+
+| Commit Message Prefix | Bump Type | Example |
+|----------------------|-----------|---------|
+| `fix:`, `docs:`, `chore:`, etc. | **PATCH** | 0.1.5 → 0.1.6 |
+| `feat:` or `feature:` | **MINOR** | 0.1.5 → 0.2.0 |
+| `breaking:` or `major:` | **MAJOR** | 0.1.5 → 1.0.0 |
+
+### Examples
+
+```bash
+# PATCH bump (0.1.5 → 0.1.6)
+git commit -m "fix: resolve logging issue"
+git commit -m "docs: update readme"
+git commit -m "chore: cleanup code"
+
+# MINOR bump (0.1.5 → 0.2.0)
+git commit -m "feat: add new retry decorator"
+git commit -m "feature: add JSON utilities"
+
+# MAJOR bump (0.1.5 → 1.0.0)
+git commit -m "breaking: remove deprecated functions"
+git commit -m "major: redesign API"
+```
+
+### What Happens Automatically
+
+1. `version-bump.yml` workflow triggers on push to `main`
+2. Reads current version from `version.py`
+3. Determines bump type from commit message
+4. Updates `version.py` and `pyproject.toml`
+5. Creates and pushes git tag (e.g., `v0.1.6`)
+
+### Version Access
+
+```python
+>>> from test_common_framework import __version__
+>>> print(__version__)
+'0.1.6'
+```
+
 ## Development
 
 ```bash
