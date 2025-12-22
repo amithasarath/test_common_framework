@@ -109,6 +109,119 @@ test-common-framework = {git = "https://github.com/amithasarath/test_common_fram
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## Detailed Workflow Breakdown
+
+### 1. build-pypi-layer.yml
+
+Creates Lambda layer with public PyPI packages (requests, boto3, etc.)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                  build-pypi-layer.yml                           │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  TRIGGER:                                                       │
+│  └── Push to main + pyproject.toml changed                      │
+│  └── Manual trigger (workflow_dispatch)                         │
+│                                                                 │
+│  STEPS:                                                         │
+│  1. Checkout code                                               │
+│  2. Set up Python 3.11                                          │
+│  3. Install Poetry                                              │
+│  4. poetry install --only pypi  ← Only PyPI packages            │
+│  5. Create layer folder structure                               │
+│  6. Copy packages from .venv to layer/                          │
+│  7. Remove __pycache__, .pyc, .dist-info                        │
+│  8. Zip → pypi-layer.zip                                        │
+│  9. Configure AWS credentials                                   │
+│  10. aws lambda publish-layer-version  ← Upload to AWS          │
+│                                                                 │
+│  OUTPUT: pypi-dependencies-layer (new version in AWS)           │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 2. build-framework-layer.yml
+
+Creates Lambda layer with test_common_framework (private GitHub package)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                  build-framework-layer.yml                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  TRIGGER:                                                       │
+│  └── Push to main + pyproject.toml changed                      │
+│  └── Manual trigger (workflow_dispatch)                         │
+│                                                                 │
+│  STEPS:                                                         │
+│  1. Checkout code                                               │
+│  2. Set up Python 3.11                                          │
+│  3. Install Poetry                                              │
+│  4. Configure Git with GH_TOKEN  ← Access private repo          │
+│  5. poetry install --only framework  ← Only framework           │
+│  6. Create layer folder structure                               │
+│  7. Copy packages from .venv to layer/                          │
+│  8. Remove __pycache__, .pyc, .dist-info                        │
+│  9. Zip → framework-layer.zip                                   │
+│  10. Configure AWS credentials                                  │
+│  11. aws lambda publish-layer-version  ← Upload to AWS          │
+│                                                                 │
+│  OUTPUT: framework-layer (new version in AWS)                   │
+│                                                                 │
+│  NOTE: Uses GH_TOKEN to access private GitHub repository        │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 3. deploy-lambda.yml
+
+Deploys Lambda function code and attaches both layers
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                  deploy-lambda.yml                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  TRIGGER:                                                       │
+│  └── Push to main + lambda_function.py or src/** changed        │
+│  └── Manual trigger (workflow_dispatch)                         │
+│                                                                 │
+│  STEPS:                                                         │
+│  1. Checkout code                                               │
+│  2. Configure AWS credentials                                   │
+│  3. Get latest PyPI layer ARN (list-layer-versions)             │
+│  4. Get latest Framework layer ARN (list-layer-versions)        │
+│  5. Zip Lambda code → function.zip                              │
+│  6. aws lambda update-function-code  ← Deploy code              │
+│  7. aws lambda wait function-updated  ← Wait for completion     │
+│  8. aws lambda update-function-configuration --layers           │
+│     └── Attach BOTH layers to Lambda function                   │
+│                                                                 │
+│  OUTPUT: Lambda function updated with new code + both layers    │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Workflow Comparison
+
+| Aspect | build-pypi-layer.yml | build-framework-layer.yml | deploy-lambda.yml |
+|--------|---------------------|--------------------------|-------------------|
+| **Trigger** | pyproject.toml change | pyproject.toml change | Code change (*.py) |
+| **Installs** | `--only pypi` | `--only framework` | Nothing (just zips) |
+| **Creates** | Layer zip | Layer zip | Function zip |
+| **AWS Command** | `publish-layer-version` | `publish-layer-version` | `update-function-code` |
+| **Needs GH_TOKEN** | ❌ No | ✅ Yes (private repo) | ❌ No |
+
+### When Each Workflow Runs
+
+| Changed File | build-pypi-layer | build-framework-layer | deploy-lambda |
+|--------------|:----------------:|:---------------------:|:-------------:|
+| `pyproject.toml` | ✅ | ✅ | ❌ |
+| `lambda_function.py` | ❌ | ❌ | ✅ |
+| `src/**` | ❌ | ❌ | ✅ |
+| Both | ✅ | ✅ | ✅ |
+
 ## Required GitHub Secrets
 
 | Secret | Description |
