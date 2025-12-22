@@ -457,6 +457,35 @@ AWS Lambda layers use **versioning**. Each update creates a new version (old ver
 
 **No deletion happens.** Each `publish-layer-version` creates a new version number. Lambda is updated to use the latest version.
 
+#### When New Layer is Created vs Reused
+
+The workflow is **trigger-based**, not **content-based**:
+
+| Scenario | Result |
+|----------|--------|
+| `pyproject.toml` unchanged | Workflow doesn't run, existing layer used |
+| `pyproject.toml` changed | NEW layer version created |
+| `pyproject.toml` reverted to old version | NEW layer version created (even if same content) |
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                  LAYER CREATION BEHAVIOR                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  pyproject.toml changed → workflow runs → NEW layer created     │
+│                                                                 │
+│  Example (even if reverted to same packages):                   │
+│  Version 1: requests==2.31.0                                    │
+│  Version 2: requests==2.32.0  (updated)                         │
+│  Version 3: requests==2.31.0  (reverted) ← Still creates NEW    │
+│                                                                 │
+│  No "smart check" for duplicate content.                        │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**To reuse a specific layer version:** Manually specify the layer ARN in `deploy-lambda.yml` instead of auto-fetching latest.
+
 #### How GitHub Actions Controls AWS
 
 GitHub Actions connects to AWS using credentials stored as secrets:
