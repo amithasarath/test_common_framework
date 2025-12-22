@@ -61,8 +61,8 @@ def unstable_function():
 | Branch | Version Format | Example |
 |--------|----------------|---------|
 | `main` | Rounded version | `1.0.0`, `1.1.0`, `2.0.0` |
-| `dev` | Alpha version | `1.0.0-alpha.1`, `1.0.0-alpha.2` |
 | `stg` | Beta version | `1.0.0-beta.1`, `1.0.0-beta.2` |
+| `dev` | Alpha version | `1.0.0-alpha.1`, `1.0.0-alpha.2` |
 | `feature/*` | Feature version | `1.0.0-feature.1`, `1.0.0-feature.2` |
 
 ### Automatic Version Bumping
@@ -176,9 +176,9 @@ The `dev-version.yml` workflow determines the version prefix based on branch nam
 
 | Branch | Version Prefix | Example |
 |--------|---------------|---------|
-| `feature/*` | feature | `0.3.4-feature.1` |
-| `dev` | alpha | `0.3.4-alpha.1` |
 | `stg` | beta | `0.3.4-beta.1` |
+| `dev` | alpha | `0.3.4-alpha.1` |
+| `feature/*` | feature | `0.3.4-feature.1` |
 | any other | alpha | `0.3.4-alpha.1` |
 
 #### When Each Workflow Runs
