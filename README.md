@@ -96,9 +96,27 @@ git commit -m "major: redesign API"
 
 1. `version-bump.yml` workflow triggers on push to `main`
 2. Reads current version from `version.py`
-3. Determines bump type from commit message
+3. Determines bump type from **last commit message**
 4. Updates `version.py` and `pyproject.toml`
 5. Creates and pushes git tag (e.g., `v0.1.6`)
+
+### Multiple Commits in One Push
+
+The workflow reads only the **last commit message**. If a PR has multiple commits with different prefixes, only the last one is used.
+
+**Recommended:** Use **Squash Merge** in GitHub when merging PRs. This combines all commits into one with a single message.
+
+```
+PR commits:
+  - fix: bug 1
+  - fix: bug 2
+  - feat: new feature
+
+Squash merge with message:
+  "feat: add new feature with bug fixes"
+
+Result: MINOR bump (feat: prefix used)
+```
 
 ### Version Access
 
@@ -114,9 +132,20 @@ This repository uses 3 workflow files located in `.github/workflows/`:
 
 | File | Purpose |
 |------|---------|
-| **ci.yml** | Installs dependencies and validates the build |
-| **version-bump.yml** | Bumps version, updates `version.py`, creates git tag |
-| **dev-version.yml** | Creates pre-release versions (alpha/feature) |
+| **ci.yml** | Validates build by running `poetry install` |
+| **version-bump.yml** | Bumps version, updates `version.py`, creates git tag (main only) |
+| **dev-version.yml** | Creates pre-release versions and tags (dev/stg/feature branches) |
+
+#### Why Two Version YAML Files?
+
+| Aspect | dev-version.yml | version-bump.yml |
+|--------|-----------------|------------------|
+| **Trigger** | All branches except main | Main only |
+| **Version format** | `1.0.0-alpha.1` (with suffix) | `1.0.0` (clean) |
+| **Creates git tag?** | ✅ Yes (`v1.0.0-alpha.1`) | ✅ Yes (`v1.0.0`) |
+| **Reads commit prefix?** | ❌ No | ✅ Yes (fix/feat/breaking) |
+
+Different logic required for pre-release vs production versions, so kept separate for clarity.
 
 #### Workflow Triggers
 
