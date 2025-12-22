@@ -94,3 +94,10 @@ jobs:
           git add test_common_framework/version.py
           git diff --staged --quiet || git commit -m "chore: update pre-release version [skip ci]"
           git push || echo "Nothing to push"
+
+      - name: Create Git tag
+        run: |
+          TAG_NAME="v${{ steps.version.outputs.prerelease_version }}"
+          echo "Creating tag: $TAG_NAME"
+          git tag "$TAG_NAME"
+          git push origin "$TAG_NAME"
