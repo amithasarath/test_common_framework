@@ -358,8 +358,8 @@ test-common-framework = {git = "https://github.com/org/test_common_framework.git
 
 | Workflow | File | Triggers On | What It Does |
 |----------|------|-------------|--------------|
-| **Build PyPI Layer** | `build-pypi-layer.yml` | `pyproject.toml` changes | `poetry install --only pypi` → Layer 1 |
-| **Build Framework Layer** | `build-framework-layer.yml` | `pyproject.toml` changes | `poetry install --only framework` → Layer 2 |
+| **Build PyPI Layer** | `build-pypi-layer.yml` | `pyproject.toml` changes | `poetry export` + `pip --target` → Layer 1 |
+| **Build Framework Layer** | `build-framework-layer.yml` | `pyproject.toml` changes | `poetry export` + `pip --target` → Layer 2 |
 | **Deploy Lambda** | `deploy-lambda.yml` | `lambda_function.py` or `src/**` | Deploys code, attaches BOTH layers |
 
 #### How Layer is Created Automatically
@@ -375,12 +375,13 @@ Each layer workflow runs on a **GitHub Actions runner** (temporary Ubuntu VM) an
 │                                                                 │
 │  /home/runner/work/project/                                     │
 │  ├── pyproject.toml                                             │
-│  ├── .venv/                    ← Created by Poetry              │
-│  │   └── lib/python3.11/site-packages/                          │
-│  │       ├── requests/                                          │
-│  │       └── boto3/                                             │
 │  └── layer/                    ← Created by workflow            │
-│      └── python/lib/python3.11/site-packages/                   │
+│      └── python/               ← Packages installed here        │
+│          ├── requests/                                          │
+│          ├── boto3/                                             │
+│          └── ...                                                │
+│                                                                 │
+│  NOTE: No .venv created - packages installed directly to layer  │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -392,45 +393,40 @@ Each layer workflow runs on a **GitHub Actions runner** (temporary Ubuntu VM) an
 │                  AUTOMATIC LAYER CREATION                       │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  Step 1: Configure Poetry                                       │
-│  └── poetry config virtualenvs.in-project true                  │
-│      └── Tells Poetry to create .venv inside project folder     │
+│  Step 1: Export requirements from Poetry                        │
+│  └── poetry export --only <group> --without-hashes              │
+│      └── Outputs package list from pyproject.toml               │
 │                                                                 │
-│  Step 2: Install packages                                       │
-│  └── poetry install --only <group>                              │
-│      └── Packages installed to: .venv/lib/python3.11/site-packages/│
+│  Step 2: Install packages directly to layer folder              │
+│  └── pip install --target layer/python                          │
+│      └── Packages installed directly (no .venv created)         │
 │                                                                 │
-│  Step 3: Create Lambda layer folder structure                   │
-│  └── Creates: layer/python/lib/python3.11/site-packages/        │
-│                                                                 │
-│  Step 4: Copy packages to layer folder                          │
-│  └── Copies all packages from .venv to layer folder             │
-│                                                                 │
-│  Step 5: Clean up unnecessary files                             │
+│  Step 3: Clean up unnecessary files                             │
 │  └── Removes __pycache__, .pyc, .dist-info to reduce size       │
 │                                                                 │
-│  Step 6: Create zip file                                        │
+│  Step 4: Create zip file                                        │
 │  └── Zips the python/ folder → layer.zip                        │
 │                                                                 │
-│  Step 7: Publish to AWS Lambda                                  │
+│  Step 5: Publish to AWS Lambda                                  │
 │  └── Uploads layer.zip and creates new layer version            │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Note:** The `.venv` and `layer/` folders exist only during the workflow run. After the layer is uploaded to AWS, the runner VM is destroyed.
+**Key Command (no .venv, no requirements.txt file):**
+
+```bash
+poetry export --only pypi --without-hashes | pip install -r /dev/stdin --target layer/python
+```
 
 **Final Layer Structure (uploaded to AWS):**
 
 ```
 layer.zip
 └── python/
-    └── lib/
-        └── python3.11/
-            └── site-packages/
-                ├── requests/
-                ├── boto3/
-                └── ... (all packages)
+    ├── requests/
+    ├── boto3/
+    └── ... (all packages)
 ```
 
 **Note:** PyPI layer is created once and rarely changes. Framework layer rebuilds when version tag is updated.
@@ -699,13 +695,21 @@ layer.zip
 
 To create a Lambda layer manually without CI/CD:
 
-1. **Configure Poetry** - Set Poetry to create the virtual environment inside the project folder
-2. **Install dependencies** - Install only the required dependency group (e.g., `pypi` or `framework`)
-3. **Create layer folder structure** - Create `layer/python/lib/python3.11/site-packages/`
-4. **Copy packages** - Copy all installed packages from `.venv/lib/python3.11/site-packages/` to the layer folder
-5. **Clean up** - Remove `__pycache__`, `.pyc` files, and `.dist-info` folders to reduce size
-6. **Create zip** - Zip the `python` folder inside the layer directory
-7. **Upload to AWS** - Use AWS CLI or Console to publish the layer with the zip file
+1. **Export requirements** - `poetry export --only pypi --without-hashes -o requirements.txt`
+2. **Create layer folder** - `mkdir -p layer/python`
+3. **Install to layer** - `pip install -r requirements.txt --target layer/python`
+4. **Clean up** - Remove `__pycache__`, `.pyc` files, and `.dist-info` folders
+5. **Create zip** - `cd layer && zip -r ../layer.zip python`
+6. **Upload to AWS** - Use AWS CLI or Console to publish the layer
+
+**Quick command (no .venv, no requirements.txt file):**
+
+```bash
+mkdir -p layer/python
+poetry export --only pypi --without-hashes | pip install -r /dev/stdin --target layer/python
+cd layer && zip -r ../layer.zip python
+aws lambda publish-layer-version --layer-name my-layer --zip-file fileb://layer.zip
+```
 
 ### Adding a New Layer (Future Packages)
 
@@ -761,16 +765,11 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       - uses: snok/install-poetry@v1
 
-      - name: Install ML dependencies only
+      - name: Install ML dependencies directly to layer folder
         run: |
-          poetry config virtualenvs.in-project true
-          poetry install --only ml --no-interaction
-
-      - name: Build Lambda Layer
-        run: |
-          mkdir -p layer/python/lib/python${{ env.PYTHON_VERSION }}/site-packages
-          cp -r .venv/lib/python${{ env.PYTHON_VERSION }}/site-packages/* \
-            layer/python/lib/python${{ env.PYTHON_VERSION }}/site-packages/
+          mkdir -p layer/python
+          poetry export --only ml --without-hashes | \
+            pip install -r /dev/stdin --target layer/python
           find layer -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
           find layer -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
           cd layer && zip -r ../ml-layer.zip python
