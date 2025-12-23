@@ -128,15 +128,16 @@ Creates Lambda layer with public PyPI packages (requests, boto3, etc.)
 │  1. Checkout code                                               │
 │  2. Set up Python 3.11                                          │
 │  3. Install Poetry                                              │
-│  4. poetry install --only pypi  ← Only PyPI packages            │
-│  5. Create layer folder structure                               │
-│  6. Copy packages from .venv to layer/                          │
-│  7. Remove __pycache__, .pyc, .dist-info                        │
-│  8. Zip → pypi-layer.zip                                        │
-│  9. Configure AWS credentials                                   │
-│  10. aws lambda publish-layer-version  ← Upload to AWS          │
+│  4. poetry export --only pypi  ← Export requirements            │
+│  5. pip install --target layer/python  ← Install directly       │
+│  6. Remove __pycache__, .pyc, .dist-info                        │
+│  7. Zip → pypi-layer.zip                                        │
+│  8. Configure AWS credentials                                   │
+│  9. aws lambda publish-layer-version  ← Upload to AWS           │
 │                                                                 │
 │  OUTPUT: pypi-dependencies-layer (new version in AWS)           │
+│                                                                 │
+│  NOTE: No .venv created - packages installed directly to layer  │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -159,16 +160,16 @@ Creates Lambda layer with test_common_framework (private GitHub package)
 │  2. Set up Python 3.11                                          │
 │  3. Install Poetry                                              │
 │  4. Configure Git with GH_TOKEN  ← Access private repo          │
-│  5. poetry install --only framework  ← Only framework           │
-│  6. Create layer folder structure                               │
-│  7. Copy packages from .venv to layer/                          │
-│  8. Remove __pycache__, .pyc, .dist-info                        │
-│  9. Zip → framework-layer.zip                                   │
-│  10. Configure AWS credentials                                  │
-│  11. aws lambda publish-layer-version  ← Upload to AWS          │
+│  5. poetry export --only framework  ← Export requirements       │
+│  6. pip install --target layer/python  ← Install directly       │
+│  7. Remove __pycache__, .pyc, .dist-info                        │
+│  8. Zip → framework-layer.zip                                   │
+│  9. Configure AWS credentials                                   │
+│  10. aws lambda publish-layer-version  ← Upload to AWS          │
 │                                                                 │
 │  OUTPUT: framework-layer (new version in AWS)                   │
 │                                                                 │
+│  NOTE: No .venv created - packages installed directly to layer  │
 │  NOTE: Uses GH_TOKEN to access private GitHub repository        │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
@@ -208,7 +209,8 @@ Deploys Lambda function code and attaches both layers
 | Aspect | build-pypi-layer.yml | build-framework-layer.yml | deploy-lambda.yml |
 |--------|---------------------|--------------------------|-------------------|
 | **Trigger** | pyproject.toml change | pyproject.toml change | Code change (*.py) |
-| **Installs** | `--only pypi` | `--only framework` | Nothing (just zips) |
+| **Method** | `poetry export` + `pip --target` | `poetry export` + `pip --target` | Nothing (just zips) |
+| **Creates .venv** | ❌ No | ❌ No | ❌ No |
 | **Creates** | Layer zip | Layer zip | Function zip |
 | **AWS Command** | `publish-layer-version` | `publish-layer-version` | `update-function-code` |
 | **Needs GH_TOKEN** | ❌ No | ✅ Yes (private repo) | ❌ No |

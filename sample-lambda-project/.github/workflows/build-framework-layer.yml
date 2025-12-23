@@ -43,36 +43,29 @@ jobs:
           git config --global url."https://${{ secrets.GH_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
       # ============================================
-      # Install ONLY test_common_framework (not PyPI packages)
+      # Install packages directly to layer/python/ folder
+      # No .venv created - uses poetry export + pip install --target
       # ============================================
-      - name: Install framework only
+      - name: Install framework directly to layer folder
         run: |
-          poetry config virtualenvs.in-project true
-          poetry install --only framework --no-interaction
+          mkdir -p layer/python
 
-          echo "=== Installed framework package ==="
-          poetry show
+          # Export from poetry and pipe directly to pip (no requirements.txt file)
+          poetry export --only framework --without-hashes | \
+            pip install -r /dev/stdin \
+              --target layer/python
 
-          echo "=== Framework version ==="
-          poetry show test-common-framework
+          echo "=== Installed packages ==="
+          ls -la layer/python/
 
       # ============================================
-      # Build Lambda Layer
+      # Clean up and package layer
       # ============================================
-      - name: Build Lambda Layer
+      - name: Clean up unnecessary files
         run: |
-          mkdir -p layer/python/lib/python${{ env.PYTHON_VERSION }}/site-packages
-
-          cp -r .venv/lib/python${{ env.PYTHON_VERSION }}/site-packages/* \
-            layer/python/lib/python${{ env.PYTHON_VERSION }}/site-packages/
-
-          # Remove unnecessary files
           find layer -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
           find layer -type f -name "*.pyc" -delete 2>/dev/null || true
           find layer -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
-
-          echo "=== Layer contents ==="
-          ls -la layer/python/lib/python${{ env.PYTHON_VERSION }}/site-packages/
 
       - name: Package Lambda Layer
         run: |
@@ -89,8 +82,8 @@ jobs:
 
       - name: Publish Framework Layer
         run: |
-          # Get framework version
-          FRAMEWORK_VERSION=$(poetry show test-common-framework 2>/dev/null | grep 'version' | awk '{print $3}' || echo "unknown")
+          # Get framework version from installed package
+          FRAMEWORK_VERSION=$(pip show test-common-framework --path layer/python 2>/dev/null | grep 'Version' | awk '{print $2}' || echo "unknown")
 
           LAYER_ARN=$(aws lambda publish-layer-version \
             --layer-name ${{ env.LAYER_NAME }} \
@@ -106,7 +99,7 @@ jobs:
 
       - name: Summary
         run: |
-          FRAMEWORK_VERSION=$(poetry show test-common-framework 2>/dev/null | grep 'version' | awk '{print $3}' || echo "unknown")
+          FRAMEWORK_VERSION=$(pip show test-common-framework --path layer/python 2>/dev/null | grep 'Version' | awk '{print $2}' || echo "unknown")
           echo "## Framework Layer Published" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Layer Name:** ${{ env.LAYER_NAME }}" >> $GITHUB_STEP_SUMMARY

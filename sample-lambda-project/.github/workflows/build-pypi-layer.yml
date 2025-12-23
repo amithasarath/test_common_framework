@@ -36,34 +36,33 @@ jobs:
           version: latest
 
       # ============================================
-      # Install ONLY PyPI packages (not framework)
+      # Install packages directly to layer/python/ folder
+      # No .venv created - uses poetry export + pip install --target
       # ============================================
-      - name: Install PyPI dependencies only
+      - name: Install packages directly to layer folder
         run: |
-          poetry config virtualenvs.in-project true
-          poetry install --only pypi --no-interaction
+          mkdir -p layer/python
 
-          echo "=== Installed PyPI packages ==="
-          poetry show
+          # Export from poetry and pipe directly to pip (no requirements.txt file)
+          poetry export --only pypi --without-hashes | \
+            pip install -r /dev/stdin \
+              --target layer/python \
+              --platform manylinux2014_x86_64 \
+              --only-binary=:all: \
+              --python-version ${{ env.PYTHON_VERSION }}
+
+          echo "=== Installed packages ==="
+          ls -la layer/python/
 
       # ============================================
-      # Build Lambda Layer
+      # Clean up and package layer
       # ============================================
-      - name: Build Lambda Layer
+      - name: Clean up unnecessary files
         run: |
-          mkdir -p layer/python/lib/python${{ env.PYTHON_VERSION }}/site-packages
-
-          cp -r .venv/lib/python${{ env.PYTHON_VERSION }}/site-packages/* \
-            layer/python/lib/python${{ env.PYTHON_VERSION }}/site-packages/
-
-          # Remove unnecessary files
           find layer -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
           find layer -type f -name "*.pyc" -delete 2>/dev/null || true
           find layer -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
           find layer -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
-
-          echo "=== Layer contents ==="
-          ls -la layer/python/lib/python${{ env.PYTHON_VERSION }}/site-packages/
 
       - name: Package Lambda Layer
         run: |
